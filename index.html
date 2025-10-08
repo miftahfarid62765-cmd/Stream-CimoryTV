@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Cimory TV</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Load Hls.js for M3U8 streaming -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        
+        :root {
+            --color-primary: #7C3AED; /* violet-700 */
+            --color-secondary: #FCD34D; /* amber-300 */
+        }
+        
+        /* Font Inter */
+        html { font-family: 'Inter', sans-serif; }
+
+        /* Custom Scrollbar */
+        .horizontal-scroll {
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            scrollbar-color: var(--color-primary) #374151; /* gray-700 */
+        }
+
+        .horizontal-scroll::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        
+        .horizontal-scroll::-webkit-scrollbar-thumb {
+            background-color: var(--color-primary);
+            border-radius: 3px;
+        }
+        
+        .horizontal-scroll::-webkit-scrollbar-track {
+            background-color: #374151; /* gray-700 */
+        }
+
+        #hls-video-player {
+            width: 100%;
+            height: 100%;
+            min-height: 300px;
+        }
+
+        /* Set primary color for the Tailwind customization */
+        .bg-primary { background-color: var(--color-primary); }
+        .text-primary { color: var(--color-primary); }
+        .border-primary { border-color: var(--color-primary); }
+        .bg-secondary { background-color: var(--color-secondary); }
+
+
+        /* --- WATERMARK STYLING (SATU TEKS, DI TENGAH, LEBIH TEBAL) --- */
+        .watermark-style {
+            /* Warna Putih, Opasitas Ditingkatkan, Font Lebih Besar */
+            color: #FFFFFF; 
+            font-size: 5rem; /* Ukuran besar untuk fokus di tengah */
+            font-weight: 900;
+            opacity: 0.45; /* Ditingkatkan ke 0.45 */
+            user-select: none;
+            pointer-events: none;
+            white-space: nowrap;
+            line-height: 1; 
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Tambah shadow agar lebih kontras */
+        }
+        
+        @media (max-width: 768px) {
+            .watermark-style {
+                font-size: 2.5rem; /* Sesuaikan untuk perangkat mobile */
+            }
+        }
+        /* --- END WATERMARK STYLING --- */
+
+    </style>
+
+    <script>
+        // Konfigurasi Tailwind
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#7C3AED', // violet-700
+                        secondary: '#FCD34D', // amber-300
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 min-h-screen text-white relative">
+    
+    <!-- 
+    ================================================================================
+    NAVBAR PENTING: Menggunakan 'fixed' agar TIDAK BERGERAK saat digulir.
+    ================================================================================
+    -->
+    <nav id="main-nav" class="fixed top-0 left-0 right-0 z-[100] bg-gray-900 border-b border-gray-800 shadow-2xl transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <!-- Logo -->
+                <div class="flex items-center">
+                    <i data-lucide="zap" class="w-8 h-8 text-primary mr-2"></i>
+                    <span class="text-2xl font-extrabold tracking-tight text-white">Stream<span class="text-primary">Cimory TV</span></span>
+                </div>
+                
+                <!-- Nav Links -->
+                <div class="flex-grow hidden md:flex items-center justify-center space-x-8 h-full">
+                    <a href="#" class="nav-link h-full flex items-center px-2 border-b-2 border-transparent hover:border-primary/50 text-gray-300 font-medium transition duration-150" data-page="home" onclick="setPage('home')">
+                        <i data-lucide="home" class="w-5 h-5 mr-1"></i> Beranda
+                    </a>
+                    <a href="#" class="nav-link h-full flex items-center px-2 border-b-2 border-transparent hover:border-primary/50 text-gray-300 font-medium transition duration-150" data-page="live-tv" onclick="setPage('live-tv')">
+                        <i data-lucide="video" class="w-5 h-5 mr-1"></i> Live TV
+                    </a>
+                    <a href="#" class="nav-link h-full flex items-center px-2 border-b-2 border-transparent hover:border-primary/50 text-gray-300 font-medium transition duration-150" data-page="tv-on-demand" onclick="setPage('tv-on-demand')">
+                        <i data-lucide="tv-2" class="w-5 h-5 mr-1"></i> TV On Demand
+                    </a>
+                    <a href="#" class="nav-link h-full flex items-center px-2 border-b-2 border-transparent hover:border-primary/50 text-gray-300 font-medium transition duration-150" data-page="video" onclick="setPage('video')">
+                        <i data-lucide="clapperboard" class="w-5 h-5 mr-1"></i> Video
+                    </a>
+                </div>
+
+                <!-- Auth Button -->
+                <div class="flex items-center">
+                    <button id="login-btn" class="bg-primary hover:bg-violet-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 transform hover:scale-105 shadow-md shadow-primary/50" onclick="document.getElementById('login-modal').classList.remove('hidden')">
+                        <i data-lucide="log-in" class="w-5 h-5 inline mr-1"></i> Masuk
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mobile Menu -->
+            <div class="md:hidden flex justify-between space-x-2 py-2 overflow-x-auto border-t border-gray-800">
+                <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="home" onclick="setPage('home')">Beranda</a>
+                <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="live-tv" onclick="setPage('live-tv')">Live TV</a>
+                <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="tv-on-demand" onclick="setPage('tv-on-demand')">On Demand</a>
+                <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="video" onclick="setPage('video')">Video</a>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- 
+    ================================================================================
+    SPACER PENTING: DIV KOSONG yang mendorong konten utama ke bawah
+    ================================================================================
+    -->
+    <div id="navbar-spacer" class="h-32 md:h-20"></div>
+
+    <!-- Main Content Area -->
+    <main id="content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-0 md:py-4 relative z-[95]"> 
+        <div class="text-center text-gray-500 py-12">Memuat Konten...</div>
+    </main>
+
+    <!-- Login Modal (Custom Modal UI) -->
+    <div id="login-modal" class="fixed inset-0 z-[200] hidden bg-black bg-opacity-75 flex items-center justify-center p-4">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700">
+            <h3 class="text-3xl font-bold text-white mb-6 text-center">Masuk ke StreamTV</h3>
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                    <input type="email" id="email" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-primary focus:border-primary" placeholder="contoh@email.com" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-300 mb-1">Kata Sandi</label>
+                    <input type="password" id="password" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-primary focus:border-primary" placeholder="Minimal 6 karakter" required>
+                </div>
+                <button type="submit" class="w-full bg-primary hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition duration-300 transform hover:scale-[1.01] mb-4">
+                    Masuk
+                </button>
+            </form>
+            <div class="relative flex items-center justify-center my-6">
+                <div class="flex-grow border-t border-gray-700"></div>
+                <span class="flex-shrink mx-4 text-gray-500 text-sm">ATAU</span>
+                <div class="flex-grow border-t border-gray-700"></div>
+            </div>
+            <button class="w-full flex items-center justify-center bg-white text-gray-900 font-bold py-3 rounded-xl transition duration-300 transform hover:scale-[1.01] shadow-md hover:shadow-lg" onclick="handleGoogleLogin(event)">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo_2013_Google.png" alt="Google Logo" class="w-5 h-5 mr-3">
+                Masuk dengan Google
+            </button>
+            <button class="mt-4 w-full text-center text-gray-400 hover:text-primary transition duration-300" onclick="document.getElementById('login-modal').classList.add('hidden')">
+                Tutup
+            </button>
+        </div>
+    </div>
+
+    <!-- Alert Message Container -->
+    <div id="alert-container"></div>
+    
+    <script type="module">
+        // --- DATA MOCKUP ---
+        const SLIDER_IMAGES = [
+            'https://img.freepik.com/premium-photo/3d-written-live-now-live-viewing-online-start-button-watch-movie-news-music-broadcast-video-clip-smart-tv-device-screen-computer-volume-slider-vector-illustration_181020-2319.jpg',
+            'https://media.istockphoto.com/id/1306922705/vector/live-stream-banner.jpg?s=612x612&w=0&k=20&c=NDDXT2Ftq-C-VyytMsHWgHCrcJ2d0I_pHEFz1hsw2wQ=',
+            'https://i.pinimg.com/736x/14/f0/ba/14f0ba032e62cc601e7a1685d5886f50.jpg',
+            'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRhCzhbSyz8_NLGJw7H1J5NKID2JHmS_-JmLQ&s',
+            'https://static.vecteezy.com/system/resources/thumbnails/009/169/682/small_2x/3d-live-simple-logo-icon-transparent-background-alpha-free-free-video.jpg',
+        ];
+
+        // MOCK_CHANNELS: Total 20 Saluran
+        const ALL_CHANNELS = [
+            { id: '1', name: "CNBC Indonesia", streamUrl: "http://live.cnbcindonesia.com/livecnbc/smil:cnbctv.smil/master.m3u8", logo: "https://akcdn.detik.net.id/visual/2018/02/08/707668e4-5770-4679-9b4b-9ff343b68eb6_169.jpeg?w=900&q=80", color: "bg-primary" },
+            { id: '2', name: "CNN Indonesia", streamUrl: "https://live.cnnindonesia.com/livecnn/smil:cnntv.smil/playlist.m3u8", logo: "https://cdn0.iconfinder.com/data/icons/circle-icons/512/cnn.png", color: "bg-yellow-400" },
+            { id: '3', name: "TVRI", streamUrl: "https://ott-balancer.tvri.go.id/live/eds/Sulsel/hls/Sulsel.m3u8", logo: "https://asset-2.tribunnews.com/tribunnews/foto/bank/images/logo-tvri-2023-9.jpg", color: "bg-teal-500" }, 
+            { id: '4', name: "TV One (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/f97316/ffffff?text=TV1", color: "bg-orange-600" },
+            { id: '5', name: "Metro TV", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h12/01.m3u8", logo: "https://i.pinimg.com/1200x/0a/03/81/0a0381180e4e9ba04b88fc345a8fe326.jpg", color: "bg-gray-600" },
+            { id: '6', name: "Kompas TV", streamUrl: "http://live.kompas.tv/livekompas/smil:kompastv.smil/playlist.m3u8", logo: "https://i.pinimg.com/736x/87/1b/30/871b3052efd2948ff11e13b8908f4c2c.jpg", color: "bg-red-700" },
+            { id: '7', name: "SCTV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/f59e0b/ffffff?text=SCTV", color: "bg-amber-500" },
+            { id: '8', name: "RCTI (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/ef4444/ffffff?text=RCTI", color: "bg-red-500" }, 
+            { id: '9', name: "Trans TV (Mock)", streamUrl: "https://video.detik.com/transtv/smil:transtv.smil/index.m3u8", logo: "https://placehold.co/100x100/3b82f6/ffffff?text=TRNS", color: "bg-blue-600" }, 
+            { id: '10', name: "Trans 7 (Mock)", streamUrl: "https://video.detik.com/trans7/smil:trans7.smil/index.m3u8", logo: "https://placehold.co/100x100/8b5cf6/ffffff?text=T7", color: "bg-purple-500" },
+            
+            { id: '11', name: "Indosiar (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/ec4899/ffffff?text=Indosiar", color: "bg-pink-600" },
+            { id: '12', name: "ANTV (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/10b981/ffffff?text=ANTV", color: "bg-emerald-500" },
+            { id: '13', name: "GTV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/2563eb/ffffff?text=GTV", color: "bg-blue-600" },
+            { id: '14', name: "NET. (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/6b7280/ffffff?text=NET", color: "bg-gray-500" },
+            { id: '15', name: "RTV (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/f97316/ffffff?text=RTV", color: "bg-orange-600" },
+            { id: '16', name: "Jak TV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/4c4c4c/ffffff?text=JAK", color: "bg-neutral-600" },
+            { id: '17', name: "ESPN (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/dc2626/ffffff?text=ESPN", color: "bg-red-600" },
+            { id: '18', name: "Fox Sports (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/1d4ed8/ffffff?text=F+SPORT", color: "bg-blue-700" },
+            { id: '19', name: "BRAIN FARM", streamUrl: "http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8", logo: "https://placehold.co/100x100/059669/ffffff?text=SPORT", color: "bg-green-700" },
+            { id: '20', name: "Bein Sports (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/f59e0b/ffffff?text=BEIN", color: "bg-amber-600" },
+        ];
+        
+        const NATIONAL_CHANNELS = ALL_CHANNELS.slice(0, 10);
+        const INTERNATIONAL_CHANNELS = ALL_CHANNELS.slice(10, 20);
+
+        // --- Data Video On Demand Menggunakan ID YouTube yang Baru ---
+        const YOUTUBE_IDS = [
+            "rF7k75JCLZQ", "IJNPaWkPNZs", "NNFRH_NJBDQ", "OuxjsrPIp0g", "t5tX5l0-6vM",
+            "lQ0KiuMjXtU", "hYrvUSXoVmA", "afP_oTaxaMo", "1t0l0okrKCM", "j3dHKiT89bU",
+            "H7l0o99zDIY", "eOJQyondcj4", "-8fPfmoJ2u4", "5ViQwLcIEmM", "MlUbvV8zy6M",
+            "vYtakGL2YFo", "LKPeTa86TE", "OHnW4ryG7y0", "Pp2Zs7oK8tE", "SE4IGSeo9mQ"
+        ];
+
+        // MOCK_VIDEOS kini menggunakan ID YouTube yang valid
+        const MOCK_VIDEOS = YOUTUBE_IDS.map((id, index) => {
+            // Durasi mock yang sedikit berbeda untuk tiap video
+            const mockMinutes = (index % 5) + 5;
+            const mockSeconds = ((index * 3) + 10) % 60;
+            const duration = `${mockMinutes}:${mockSeconds < 10 ? '0' : ''}${mockSeconds}`;
+
+            return {
+                id: `v${index + 1}`,
+                title: `Konten Pilihan Cimory #${index + 1}: Eksklusif dan Segar`,
+                thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg`, 
+                duration: duration,
+                videoUrl: id 
+            };
+        });
+        // --- END OF DATA MOCKUP ---
+
+        // --- APP STATE & ROUTING ---
+        const appState = {
+            currentPage: 'live-tv', // Mulai di halaman Live TV
+            activeChannelId: ALL_CHANNELS[0].id,
+            activeVideoId: MOCK_VIDEOS[0].id, 
+        };
+        
+        window.hlsInstance = null;
+        window.sliderInterval = null;
+        let currentSlide = 0; // Global slider state
+        const contentDiv = document.getElementById('content');
+
+        // --- UTILITY & STATE MANAGEMENT ---
+
+        window.setPage = function(pageName) {
+            if (appState.currentPage !== pageName) {
+                appState.currentPage = pageName;
+                renderPage();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                renderPage(); 
+            }
+        }
+        
+        function alertMessage(message, type) {
+            const container = document.body;
+            const existingAlert = document.getElementById('custom-alert');
+            if (existingAlert) existingAlert.remove();
+
+            const bgColor = type === 'success' ? 'bg-green-600' : 'bg-red-600';
+            const alertHtml = `
+                <div id="custom-alert" class="fixed top-5 left-1/2 -translate-x-1/2 p-4 rounded-xl shadow-2xl ${bgColor} text-white font-semibold z-[300] opacity-0 transition-opacity duration-300 transform scale-95 max-w-sm w-full text-center" role="alert">
+                    ${message}
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', alertHtml);
+            const alertElement = document.getElementById('custom-alert');
+            
+            // Fade In
+            setTimeout(() => {
+                alertElement.classList.remove('opacity-0', 'scale-95');
+            }, 10);
+            
+            // Fade Out and Remove
+            setTimeout(() => {
+                alertElement.classList.add('opacity-0', 'scale-95');
+                alertElement.addEventListener('transitionend', () => alertElement.remove());
+            }, 3000);
+        }
+
+        window.handleChannelClick = function(channelId, type) {
+            appState.activeChannelId = channelId;
+            // Hanya ganti halaman ke 'live-tv' jika bukan klik dari preview 'home-preview'
+            if (type !== 'home-preview') {
+                setPage('live-tv');
+            } else {
+                // Untuk klik dari home, kita hanya mengalihkan ke Live TV tanpa perlu render ulang (setPage sudah memicu render)
+                setPage('live-tv');
+            }
+        }
+
+        /**
+         * FUNGSI KRITIS: Mengupdate video yang aktif dan me-render ulang halaman Video.
+         */
+        window.handleVideoClick = function(videoId) {
+            console.log(`[Video Clicked] Memuat video ID: ${videoId}`);
+            appState.activeVideoId = videoId;
+            setPage('video'); 
+        }
+
+        window.handleLogin = function(event) {
+            event.preventDefault();
+            document.getElementById('login-modal').classList.add('hidden');
+            alertMessage('Berhasil Masuk! (Simulasi)', 'success');
+        }
+
+        window.handleGoogleLogin = function(event) {
+            event.preventDefault();
+            document.getElementById('login-modal').classList.add('hidden');
+            alertMessage('Masuk dengan Google Berhasil! (Simulasi)', 'success');
+        }
+
+        // --- SLIDER LOGIC ---
+        function updateSlider(index) {
+            const container = document.getElementById('slider-container');
+            if (container) {
+                container.style.transform = `translateX(-${index * 100}%)`;
+                
+                const dots = document.querySelectorAll('#slider-dots .dot');
+                dots.forEach((dot, i) => {
+                    dot.classList.remove('bg-white', 'scale-125');
+                    dot.classList.add('bg-white/50');
+                    if (i === index) {
+                        dot.classList.add('bg-white', 'scale-125');
+                        dot.classList.remove('bg-white/50');
+                    }
+                });
+            }
+        }
+
+        function nextSlide() {
+            currentSlide = (currentSlide + 1) % SLIDER_IMAGES.length;
+            if (appState.currentPage === 'home') {
+                updateSlider(currentSlide);
+            } else if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
+            }
+        }
+
+
+        // --- HTML GENERATOR FUNCTIONS ---
+
+        function generateVideoGridHtml(videos) {
+            // Urutkan video aktif agar muncul di awal daftar video terkait
+            const sortedVideos = [...videos].sort((a, b) => {
+                if (a.id === appState.activeVideoId) return -1;
+                if (b.id === appState.activeVideoId) return 1;
+                return 0;
+            });
+
+            return `
+                <div class="horizontal-scroll flex space-x-6 pb-4 overflow-x-auto">
+                    ${sortedVideos.map(video => {
+                        const isActive = video.id === appState.activeVideoId && appState.currentPage === 'video';
+                        const borderColor = isActive ? 'border-4 border-secondary' : 'border-2 border-transparent';
+                        const shadowColor = isActive ? 'shadow-secondary/50' : 'shadow-lg';
+
+                        return `
+                            <div 
+                                class="flex-shrink-0 w-64 sm:w-80 cursor-pointer rounded-xl overflow-hidden shadow-lg hover:shadow-primary/50 transition duration-300 transform hover:scale-[1.02] bg-gray-800 ${borderColor} ${shadowColor}"
+                                data-video-id="${video.id}"
+                                onclick="handleVideoClick('${video.id}')"
+                            >
+                                <div class="relative">
+                                    <img 
+                                        src="${video.thumbnail}" 
+                                        alt="${video.title}" 
+                                        class="w-full h-auto object-cover"
+                                        onerror="this.onerror=null;this.src='https://placehold.co/300x180/4b5563/ffffff?text=VOD+THUMBNAIL';"
+                                    >
+                                    <div class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition duration-300">
+                                        <i data-lucide="play-circle" class="w-16 h-16 text-white fill-primary/80"></i>
+                                    </div>
+                                    <span class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-medium">${video.duration}</span>
+                                </div>
+                                <div class="p-3">
+                                    <h3 class="text-sm font-semibold ${isActive ? 'text-secondary' : 'text-gray-200'} truncate">${video.title}</h3>
+                                    ${isActive ? '<span class="text-[10px] bg-secondary text-gray-900 font-bold px-2 py-0.5 rounded-full mt-1 inline-block">SEDANG DIPUTAR</span>' : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        function generateChannelListHtml(channels, type = 'selection') {
+            const clickHandler = (channelId) => `handleChannelClick('${channelId}', '${type}')`; 
+            const activeChannelId = appState.activeChannelId;
+            
+            return `
+                <div class="horizontal-scroll flex space-x-4 pb-4 overflow-x-auto">
+                    ${channels.map(channel => {
+                        const isActive = (channel.id === activeChannelId && appState.currentPage === 'live-tv');
+                        const baseClasses = "channel-item flex-shrink-0 cursor-pointer p-3 rounded-xl transition duration-300 w-28 sm:w-36 flex flex-col items-center justify-start group";
+                        const bgColor = channel.color || 'bg-gray-700';
+                        const borderClasses = isActive 
+                            ? 'border-4 border-secondary shadow-xl shadow-secondary/30' 
+                            : 'border-2 border-transparent hover:border-primary/50';
+                            
+                        const itemBg = isActive ? 'bg-white/10' : `${bgColor} bg-opacity-20 hover:bg-opacity-30`;
+                            
+                        return `
+                            <div 
+                                class="${baseClasses} ${itemBg} ${borderClasses}"
+                                data-channel-id="${channel.id}"
+                                onclick="${clickHandler(channel.id)}"
+                            >
+                                <img 
+                                    src="${channel.logo}" 
+                                    alt="${channel.name} Logo" 
+                                    onerror="this.onerror=null;this.src='https://placehold.co/100x100/1f2937/ffffff?text=TV';"
+                                    class="w-16 h-16 rounded-full object-cover mb-2 border-2 border-white/50 shadow-md transform group-hover:scale-105 transition duration-200"
+                                >
+                                <span class="text-xs sm:text-sm font-semibold text-white text-center h-8 overflow-hidden line-clamp-2">${channel.name}</span>
+                                ${isActive ? '<span class="text-[10px] bg-secondary text-gray-900 font-bold px-2 py-0.5 rounded-full mt-1">LIVE</span>' : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        /**
+         * FUNGSI KRITIS YANG DIUBAH: Menggenerasi HTML Watermark
+         */
+        function getWatermarkHtml() {
+            return `
+                <!-- WATERMARK OVERLAY: Ditempatkan di dalam kontainer pemutar video, terpusat -->
+                <div class="watermark-overlay absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
+                    <div class="watermark-style">
+                        Stream Cimory TV
+                    </div>
+                </div>
+                <!-- END WATERMARK -->
+            `;
+        }
+
+
+        /**
+         * Menginisialisasi Pemutar Video (Mendukung HLS dan MP4)
+         */
+        window.initHlsPlayer = function(streamUrl, videoElementId = 'hls-video-player') {
+            const video = document.getElementById(videoElementId);
+            const playerContainer = document.getElementById('player-container');
+            
+            if (!video || !playerContainer) {
+                console.error(`Video player element atau container (${videoElementId}) tidak ditemukan.`);
+                return;
+            }
+
+            if (window.hlsInstance) {
+                window.hlsInstance.destroy();
+                window.hlsInstance = null;
+            }
+            
+            const existingError = playerContainer.querySelector('#error-message');
+            if(existingError) existingError.remove();
+
+            const isHlsStream = streamUrl.toLowerCase().endsWith('.m3u8');
+            
+            if (isHlsStream && typeof Hls !== 'undefined' && Hls.isSupported()) {
+                const hls = new Hls();
+                window.hlsInstance = hls;
+                
+                console.log(`[Player Init] Memuat URL Stream (HLS.js): ${streamUrl}`);
+                
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    video.play().catch(error => console.warn("[Player Warning] Autoplay mungkin diblokir.", error));
+                });
+                
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        console.error("[Player Error] HLS Fatal Error:", data);
+                        // Fallback message
+                        const errorMessage = document.createElement('div');
+                        errorMessage.id = 'error-message';
+                        errorMessage.className = "absolute inset-0 flex items-center justify-center bg-red-900/70 p-4 text-white text-lg font-bold rounded-xl z-30";
+                        errorMessage.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6 mr-2"></i> STREAMING GAGAL: Saluran tidak tersedia atau URL tidak valid. Menggunakan video mock MP4.';
+                        
+                        playerContainer.appendChild(errorMessage);
+                        lucide.createIcons();
+                        
+                        hls.detachMedia();
+                        video.src = "https://www.w3schools.com/html/mov_bbb.mp4"; 
+                        video.classList.remove('hidden'); 
+                        video.play().catch(e => console.log('[Player Warning] Mock playback failed', e));
+                    }
+                });
+            } else if (isHlsStream && video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play().catch(error => console.warn("[Player Warning] Autoplay gagal di pemutar native (Native HLS).", error));
+                });
+            } else {
+                let finalUrl = streamUrl;
+                if (isHlsStream || !streamUrl.toLowerCase().match(/\.(mp4|webm|ts)$/)) {
+                    finalUrl = "https://www.w3schools.com/html/mov_bbb.mp4"; 
+                }
+
+                video.src = finalUrl;
+                video.load(); 
+                video.addEventListener('loadedmetadata', function() {
+                    video.play().catch(error => console.warn("[Player Warning] Autoplay gagal di pemutar native.", error));
+                });
+                
+                video.onerror = function() {
+                    const errorMessage = document.createElement('div');
+                    errorMessage.id = 'error-message';
+                    errorMessage.className = "absolute inset-0 flex items-center justify-center bg-red-900/70 p-4 text-white text-lg font-bold rounded-xl z-30";
+                    errorMessage.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6 mr-2"></i> KONTEN TIDAK DAPAT DIPUTAR: URL Video tidak valid.';
+                    
+                    playerContainer.appendChild(errorMessage);
+                    lucide.createIcons();
+                    
+                    video.src = "https://archive.org/download/Webm/big-buck-bunny_trailer.webm"; 
+                    video.play().catch(e => console.log('[Player Warning] Double-fallback playback failed', e));
+                };
+            }
+        }
+        
+        // --- PAGE RENDERING IMPLEMENTATION ---
+
+        function renderHomePage() {
+            // ... (Kode renderHomePage tidak berubah)
+            return `
+                <!-- Image Slider (Carousel) -->
+                <div class="relative w-full overflow-hidden rounded-2xl shadow-2xl mb-12 h-60 md:h-96">
+                    <div id="slider-container" class="flex w-full h-full transition-transform duration-700 ease-in-out">
+                        ${SLIDER_IMAGES.map((imgUrl, index) => `
+                            <div class="flex-shrink-0 w-full h-full relative" data-slide="${index}">
+                                <img src="${imgUrl}" 
+                                     alt="Banner ${index + 1}" 
+                                     class="w-full h-full object-cover"
+                                     onerror="this.onerror=null;this.src='https://placehold.co/1200x500/1e293b/94a3b8?text=Promo';"
+                                >
+                                <div class="absolute inset-0 bg-black/40 flex items-center p-8 md:p-16">
+                                    <h1 class="text-3xl sm:text-5xl font-extrabold text-white leading-tight drop-shadow-lg max-w-lg">
+                                        Stream <span class="text-secondary">Konten Terbaik</span> Sekarang
+                                    </h1>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- Slider Dots -->
+                    <div id="slider-dots" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-3">
+                        ${SLIDER_IMAGES.map((_, index) => `
+                            <button class="dot w-3 h-3 rounded-full bg-white/50 transition-all duration-300 hover:bg-white" onclick="updateSlider(${index}); currentSlide=${index}"></button>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Saluran Nasional (10 Saluran - Horizontal Scrollable) -->
+                <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+                    <i data-lucide="tv" class="w-7 h-7 mr-3 text-primary"></i> Saluran Nasional
+                </h2>
+                ${generateChannelListHtml(NATIONAL_CHANNELS, 'home-preview')}
+                <hr class="border-gray-800 my-8">
+
+                <!-- Saluran Internasional (10 Saluran - Horizontal Scrollable) -->
+                <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+                    <i data-lucide="globe" class="w-7 h-7 mr-3 text-red-500"></i> Saluran Internasional
+                </h2>
+                ${generateChannelListHtml(INTERNATIONAL_CHANNELS, 'home-preview')}
+                <hr class="border-gray-800 my-8">
+            `;
+        }
+        
+        function renderLiveTVPage() {
+            // ... (Kode renderLiveTVPage tidak berubah)
+            const activeChannel = ALL_CHANNELS.find(c => c.id === appState.activeChannelId) || ALL_CHANNELS[0];
+            const NATIONAL_CHANNELS_LIST = ALL_CHANNELS.slice(0, 10);
+            const INTERNATIONAL_CHANNELS_LIST = ALL_CHANNELS.slice(10, 20);
+
+            return `
+                <h1 class="text-4xl font-bold text-white mb-8">Live TV Streaming</h1>
+
+                <!-- Main Video Player (Full Width) -->
+                <div class="relative aspect-video bg-black rounded-xl shadow-2xl overflow-hidden mb-10" id="player-container">
+                    <video id="hls-video-player" controls autoplay class="w-full h-full bg-black">
+                        Browser Anda tidak mendukung tag video.
+                    </video>
+                    
+                    ${getWatermarkHtml()}
+
+                    <!-- Channel Info Overlay -->
+                    <div class="absolute top-4 left-4 p-2 bg-primary/80 rounded-lg shadow-lg text-white font-semibold flex items-center z-30">
+                        <i data-lucide="video" class="w-5 h-5 mr-2"></i> 
+                        <span class="text-sm">LIVE: ${activeChannel.name}</span>
+                    </div>
+                </div>
+
+                <section class="mb-10">
+                    <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+                        <i data-lucide="tv" class="w-7 h-7 mr-3 text-primary"></i> Saluran TV (Nasional & Lokal)
+                        <span class="text-sm text-gray-400 ml-auto hidden sm:block">Total ${NATIONAL_CHANNELS_LIST.length} Saluran</span>
+                    </h2>
+                    ${generateChannelListHtml(NATIONAL_CHANNELS_LIST, 'selection')}
+                </section>
+
+                <hr class="border-gray-800 my-8">
+
+                <section class="mb-10">
+                    <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+                        <i data-lucide="globe" class="w-7 h-7 mr-3 text-red-500"></i> Saluran Internasional
+                        <span class="text-sm text-gray-400 ml-auto hidden sm:block">Total ${INTERNATIONAL_CHANNELS_LIST.length} Saluran</span>
+                    </h2>
+                    ${generateChannelListHtml(INTERNATIONAL_CHANNELS_LIST, 'selection')}
+                </section>
+            `;
+        }
+
+        function renderTVOnDemandPage() {
+            return `
+                <h1 class="text-4xl font-bold text-white mb-8">TV On Demand & Catch Up TV</h1>
+
+                <div class="space-y-10">
+                    <section>
+                        <!-- PERUBAHAN TEKS 1: Film Favorit -->
+                        <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+                            <i data-lucide="popcorn" class="w-6 h-6 mr-2 text-primary"></i> Film Favorit
+                        </h2>
+                        <p class="text-gray-400 mb-4">Tonton kembali acara-acara lokal favorit Anda yang terlewatkan. Klik video untuk memutar di halaman Video.</p>
+                        ${generateVideoGridHtml(MOCK_VIDEOS.slice(0, 8))}
+                    </section>
+
+                    <hr class="border-gray-800">
+
+                    <section>
+                        <!-- PERUBAHAN TEKS 2: Dokumenter & Edukasi DIGANTI Film Serial -->
+                        <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
+                            <i data-lucide="clapperboard" class="w-6 h-6 mr-2 text-secondary"></i> Film Serial
+                        </h2>
+                        <p class="text-gray-400 mb-4">Konten informatif dari berbagai sumber terpercaya. Klik video untuk memutar di halaman Video.</p>
+                        ${generateVideoGridHtml(MOCK_VIDEOS.slice(8, 16))}
+                    </section>
+                </div>
+            `;
+        }
+
+        /**
+         * FUNGSI KRITIS: Halaman Video kini DENGAN Watermark
+         */
+        function renderVideoPage() {
+            // ... (Kode renderVideoPage tidak berubah)
+            const activeVideo = MOCK_VIDEOS.find(v => v.id === appState.activeVideoId) || MOCK_VIDEOS[0];
+            const relatedVideos = MOCK_VIDEOS.filter(v => v.id !== activeVideo.id); 
+            const youtubeId = activeVideo.videoUrl;
+
+            return `
+                <div class="space-y-8">
+                    <!-- KOTAK UTAMA: Pemutar Video (YouTube Iframe) -->
+                    <div class="relative aspect-video bg-black rounded-xl shadow-2xl overflow-hidden" id="video-player-container">
+                        <!-- YouTube Iframe -->
+                        <iframe class="absolute top-0 left-0 w-full h-full"
+                            src="https://www.youtube.com/embed/${youtubeId}?autoplay=1&controls=1&rel=0"
+                            title="${activeVideo.title}"
+                            frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowfullscreen>
+                        </iframe>
+                        
+                        <!-- WATERMARK DITAMBAHKAN DI SINI (Di atas Iframe) -->
+                        ${getWatermarkHtml()}
+                    </div>
+
+                    <!-- Judul Video - Tampil di bawah pemutar -->
+                    <div class="border-b border-gray-800 pb-4">
+                        <h1 class="text-3xl md:text-4xl font-bold text-white leading-tight">
+                            ${activeVideo.title}
+                        </h1>
+                    </div>
+
+                    <!-- SEKSI BAWAH: Video Lainnya (SCROLL HORIZONTAL) -->
+                    <section class="pt-4">
+                        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+                            <i data-lucide="align-start" class="w-7 h-7 mr-3 text-secondary"></i> Video Lainnya Dari Cimory TV
+                        </h2>
+                        ${generateVideoGridHtml(relatedVideos)}
+                    </section>
+                </div>
+            `;
+        }
+        
+        /**
+         * FUNGSI UTAMA: Mengatur rute dan merender konten
+         */
+        function renderPage() {
+            // Logika untuk menyorot link navigasi yang aktif
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('text-primary', 'border-primary', 'font-bold');
+                link.classList.add('text-gray-300', 'border-transparent', 'font-medium');
+                if (link.dataset.page === appState.currentPage) {
+                    link.classList.add('text-primary', 'border-primary', 'font-bold');
+                    link.classList.remove('text-gray-300', 'border-transparent', 'font-medium');
+                }
+            });
+
+            let html = '';
+            switch (appState.currentPage) {
+                case 'home':
+                    html = renderHomePage();
+                    break;
+                case 'live-tv':
+                    html = renderLiveTVPage();
+                    break;
+                case 'tv-on-demand':
+                    html = renderTVOnDemandPage();
+                    break;
+                case 'video':
+                    html = renderVideoPage(); 
+                    break;
+                default:
+                    html = `
+                        <div class="text-center py-16">
+                            <i data-lucide="frown" class="w-16 h-16 mx-auto text-gray-500 mb-4"></i>
+                            <h2 class="text-3xl font-bold text-white">Halaman Tidak Ditemukan</h2>
+                            <p class="text-gray-400 mt-2">Silakan kembali ke <a href="#" onclick="setPage('home')" class="text-primary hover:underline">Beranda</a>.</p>
+                        </div>
+                    `;
+            }
+
+            contentDiv.innerHTML = html;
+            lucide.createIcons();
+            
+            if (appState.currentPage === 'home') {
+                currentSlide = 0;
+                updateSlider(currentSlide);
+                if (!window.sliderInterval) {
+                    window.sliderInterval = setInterval(nextSlide, 5000);
+                }
+            } else if (appState.currentPage === 'live-tv') {
+                const activeChannel = ALL_CHANNELS.find(c => c.id === appState.activeChannelId);
+                if (activeChannel) {
+                    initHlsPlayer(activeChannel.streamUrl, 'hls-video-player');
+                }
+            } 
+        }
+        window.renderPage = renderPage; 
+        
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            // Mulai di halaman 'live-tv'
+            renderPage(); 
+        });
+    </script>
+</body>
+</html>

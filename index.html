@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Load Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Load Hls.js for M3U8 streaming -->
+    <!-- Hls.js dipertahankan untuk Live TV, tapi TIDAK digunakan untuk VOD -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     
     <style>
@@ -22,60 +22,66 @@
         /* Font Inter */
         html { font-family: 'Inter', sans-serif; }
 
-        /* Custom Scrollbar */
+        /* Custom Scrollbar and Horizontal Scrolling */
         .horizontal-scroll {
             scroll-behavior: smooth;
-            scrollbar-width: thin;
-            scrollbar-color: var(--color-primary) #374151; /* gray-700 */
+            /* Hide scrollbar by default, but allow smooth scrolling */
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
         }
+        /* Webkit specific hiding but allowing scrolling */
+        .horizontal-scroll::-webkit-scrollbar { display: none; }
 
-        .horizontal-scroll::-webkit-scrollbar {
-            height: 6px;
-            width: 6px;
-        }
-        
-        .horizontal-scroll::-webkit-scrollbar-thumb {
-            background-color: var(--color-primary);
-            border-radius: 3px;
-        }
-        
-        .horizontal-scroll::-webkit-scrollbar-track {
-            background-color: #374151; /* gray-700 */
-        }
+        /* Style for when scrollbar is visible (if needed, currently hidden for clean design) */
+        /* .horizontal-scroll::-webkit-scrollbar-thumb { background-color: var(--color-primary); border-radius: 3px; }
+        .horizontal-scroll::-webkit-scrollbar-track { background-color: #374151; } */
 
-        #hls-video-player {
+        /* Video Player Styling */
+        #hls-video-player, #vod-video-player {
             width: 100%;
             height: 100%;
             min-height: 300px;
         }
 
+        .watermark-overlay {
+            display: flex;
+            flex-wrap: wrap;
+            align-content: space-around;
+            justify-content: space-around;
+            pointer-events: none; 
+        }
+
+        .watermark-text {
+            color: #ffffff;
+            font-size: 6rem; 
+            font-weight: 800;
+            opacity: 0.16; 
+            transform: rotate(-15deg); 
+            user-select: none;
+            white-space: nowrap;
+            letter-spacing: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            line-height: 1; 
+        }
+        
+        @media (max-width: 768px) {
+            .watermark-text {
+                font-size: 3.5rem; 
+                opacity: 0.2;
+                transform: rotate(-5deg); 
+                letter-spacing: 0.2rem;
+            }
+        }
+        
         /* Set primary color for the Tailwind customization */
         .bg-primary { background-color: var(--color-primary); }
         .text-primary { color: var(--color-primary); }
         .border-primary { border-color: var(--color-primary); }
-        .bg-secondary { background-color: var(--color-secondary); }
-
-
-        /* --- WATERMARK STYLING (SATU TEKS, DI TENGAH, LEBIH TEBAL) --- */
-        .watermark-style {
-            /* Warna Putih, Opasitas Ditingkatkan, Font Lebih Besar */
-            color: #FFFFFF; 
-            font-size: 5rem; /* Ukuran besar untuk fokus di tengah */
-            font-weight: 900;
-            opacity: 0.45; /* Ditingkatkan ke 0.45 */
-            user-select: none;
-            pointer-events: none;
-            white-space: nowrap;
-            line-height: 1; 
-            text-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Tambah shadow agar lebih kontras */
-        }
         
-        @media (max-width: 768px) {
-            .watermark-style {
-                font-size: 2.5rem; /* Sesuaikan untuk perangkat mobile */
-            }
+        /* Ad Placeholder Styling */
+        .ad-placeholder {
+            min-height: 90px;
         }
-        /* --- END WATERMARK STYLING --- */
 
     </style>
 
@@ -93,14 +99,10 @@
         }
     </script>
 </head>
-<body class="bg-gray-900 min-h-screen text-white relative">
-    
-    <!-- 
-    ================================================================================
-    NAVBAR PENTING: Menggunakan 'fixed' agar TIDAK BERGERAK saat digulir.
-    ================================================================================
-    -->
-    <nav id="main-nav" class="fixed top-0 left-0 right-0 z-[100] bg-gray-900 border-b border-gray-800 shadow-2xl transition-all duration-300">
+<body class="bg-gray-900 min-h-screen text-white">
+
+    <!-- Navbar -->
+    <nav class="sticky top-0 z-50 bg-gray-900 border-b border-gray-800 shadow-lg">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-20">
                 <!-- Logo -->
@@ -125,59 +127,36 @@
                     </a>
                 </div>
 
-                <!-- Auth Button -->
+                <!-- Auth Button/User Info -->
                 <div class="flex items-center">
-                    <button id="login-btn" class="bg-primary hover:bg-violet-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 transform hover:scale-105 shadow-md shadow-primary/50" onclick="document.getElementById('login-modal').classList.remove('hidden')">
-                        <i data-lucide="log-in" class="w-5 h-5 inline mr-1"></i> Masuk
+                    <button id="auth-btn" class="bg-primary hover:bg-violet-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 transform hover:scale-105 shadow-md shadow-primary/50" onclick="handleAuthAction()">
+                        <i data-lucide="log-in" class="w-5 h-5 inline mr-1" id="auth-icon"></i> <span id="auth-text">Memuat...</span>
                     </button>
                 </div>
             </div>
             
-            <!-- Mobile Menu -->
+            <!-- Mobile Menu (for responsiveness) -->
             <div class="md:hidden flex justify-between space-x-2 py-2 overflow-x-auto border-t border-gray-800">
                 <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="home" onclick="setPage('home')">Beranda</a>
                 <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="live-tv" onclick="setPage('live-tv')">Live TV</a>
                 <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="tv-on-demand" onclick="setPage('tv-on-demand')">On Demand</a>
-                <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="video" onclick="setPage('video')">Video</a>
+                    <a href="#" class="nav-link flex-1 text-center py-2 text-sm rounded-lg hover:bg-gray-800 text-gray-300 font-medium transition duration-150" data-page="video" onclick="setPage('video')">Video</a>
             </div>
         </div>
     </nav>
     
-    <!-- 
-    ================================================================================
-    SPACER PENTING: DIV KOSONG yang mendorong konten utama ke bawah
-    ================================================================================
-    -->
-    <div id="navbar-spacer" class="h-32 md:h-20"></div>
-
     <!-- Main Content Area -->
-    <main id="content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-0 md:py-4 relative z-[95]"> 
+    <main id="content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div class="text-center text-gray-500 py-12">Memuat Konten...</div>
     </main>
 
-    <!-- Login Modal (Custom Modal UI) -->
-    <div id="login-modal" class="fixed inset-0 z-[200] hidden bg-black bg-opacity-75 flex items-center justify-center p-4">
+      <!-- Login Modal (Google Auth) -->
+    <div id="login-modal" class="fixed inset-0 z-[100] hidden bg-black bg-opacity-75 flex items-center justify-center p-4">
         <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700">
             <h3 class="text-3xl font-bold text-white mb-6 text-center">Masuk ke StreamTV</h3>
-            <form id="login-form" onsubmit="handleLogin(event)">
-                <div class="mb-4">
-                    <label for="email" class="block text-sm font-medium text-gray-300 mb-1">Email</label>
-                    <input type="email" id="email" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-primary focus:border-primary" placeholder="contoh@email.com" required>
-                </div>
-                <div class="mb-6">
-                    <label for="password" class="block text-sm font-medium text-gray-300 mb-1">Kata Sandi</label>
-                    <input type="password" id="password" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-primary focus:border-primary" placeholder="Minimal 6 karakter" required>
-                </div>
-                <button type="submit" class="w-full bg-primary hover:bg-violet-600 text-white font-bold py-3 rounded-xl transition duration-300 transform hover:scale-[1.01] mb-4">
-                    Masuk
-                </button>
-            </form>
-            <div class="relative flex items-center justify-center my-6">
-                <div class="flex-grow border-t border-gray-700"></div>
-                <span class="flex-shrink mx-4 text-gray-500 text-sm">ATAU</span>
-                <div class="flex-grow border-t border-gray-700"></div>
-            </div>
-            <button class="w-full flex items-center justify-center bg-white text-gray-900 font-bold py-3 rounded-xl transition duration-300 transform hover:scale-[1.01] shadow-md hover:shadow-lg" onclick="handleGoogleLogin(event)">
+            <p class="text-gray-400 mb-6 text-center">Silakan gunakan akun Google Anda untuk melanjutkan.</p>
+            
+            <button class="w-full flex items-center justify-center bg-white text-gray-900 font-bold py-3 rounded-xl transition duration-300 transform hover:scale-[1.01] shadow-md hover:shadow-lg" onclick="handleGoogleLogin()">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo_2013_Google.png" alt="Google Logo" class="w-5 h-5 mr-3">
                 Masuk dengan Google
             </button>
@@ -187,82 +166,329 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal for Logout -->
+    <div id="confirm-modal" class="fixed inset-0 z-[200] hidden bg-black bg-opacity-75 flex items-center justify-center p-4">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-700">
+            <h3 class="text-2xl font-bold text-white mb-4">Konfirmasi Keluar</h3>
+            <p class="text-gray-300 mb-6">Apakah Anda yakin ingin keluar dari sesi ini?</p>
+            <div class="flex justify-end space-x-4">
+                <button class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-white font-medium" onclick="document.getElementById('confirm-modal').classList.add('hidden')">Batal</button>
+                <button class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold" onclick="handleLogout(); document.getElementById('confirm-modal').classList.add('hidden');">Keluar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Alert Message Container -->
     <div id="alert-container"></div>
     
-    <script type="module">
-        // --- DATA MOCKUP ---
+    <!-- Footer dengan Notis Hak Cipta -->
+    <footer class="bg-gray-900 text-white p-6 border-t border-gray-800 mt-12">
+        <div class="max-w-7xl mx-auto text-center">
+            <p class="text-sm font-medium">
+                &copy; <span id="current-year"></span> StreamCimory TV. Hak Cipta Terpelihara.
+            </p>
+            <p class="text-xs text-gray-500 mt-1">
+                **Peringatan Hak Cipta:** Dilarang menyalin, menyebar, atau menggunakan konten ini untuk tujuan komersial tanpa izin tertulis.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const yearElement = document.getElementById('current-year');
+            if (yearElement) {
+                yearElement.textContent = new Date().getFullYear();
+            }
+          });
+    </script>
+
+   <script type="module">
+        // =======================================================================
+        // --- KONFIGURASI FIREBASE ANDA (SUDAH DIISI OLEH ANDA) ---
+        // =======================================================================
+        
+        // Kunci-kunci ini disalin dari Konsol Firebase Anda (Tangkapan Layar)
+        const USER_CUSTOM_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyBKXKAO0Q6YMFN2-9VTASSRYTR3OBVJWG", 
+            authDomain: "stream-cimory-tv.firebaseapp.com", 
+            projectId: "stream-cimory-tv", 
+            storageBucket: "stream-cimory-tv.firebaseapp.com",
+            messagingSenderId: "122114389073",
+            appId: "1:122114389073:web:0d0aa450a2a5f752d1e",
+            measurementId: "G-VEBMMLFLJZ"
+        };
+        // =======================================================================
+        
+        // --- FIREBASE IMPORTS ---
+        // Diperbarui: Hanya mengimpor yang benar-benar digunakan.
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL FIREBASE & STATE VARIABLES ---
+        let app = null;
+        let db = null;
+        let auth = null;
+        
+        let appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
+
+        let userId = 'anon'; 
+        let isLoggedIn = false;
+        let isAuthReady = false;
+
+        // --- FIREBASE INITIALIZATION & AUTH LOGIC ---
+
+        /**
+         * Menginisialisasi Firebase menggunakan konfigurasi lingkungan (untuk koneksi dasar) 
+         * atau konfigurasi kustom user (untuk Google Login).
+         */
+        async function initFirebaseAndAuth() {
+            try {
+                let configToUse;
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                
+                // 1. Tentukan Konfigurasi yang Digunakan
+                // Cek apakah user sudah mengisi API Key asli (tandanya tidak ada kata 'GANTI_...')
+                // Karena Anda sudah mengisi, isCustomConfigValid akan menjadi TRUE.
+                const isCustomConfigValid = USER_CUSTOM_FIREBASE_CONFIG.apiKey && !USER_CUSTOM_FIREBASE_CONFIG.apiKey.includes('GANTI_DENGAN_API_KEY_ASLI_ANDA');
+
+                if (isCustomConfigValid) {
+                    // Jika user mengisi config asli, gunakan itu untuk semuanya (termasuk Google Login)
+                    configToUse = USER_CUSTOM_FIREBASE_CONFIG;
+                    console.log("[Firebase] Menggunakan Konfigurasi Kustom User untuk Google Login.");
+                } else {
+                    // Jika user belum mengisi config, gunakan config lingkungan (hanya anonim/token yang didukung)
+                    const firebaseConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+                    if (!firebaseConfigString) {
+                        alertMessage("Error: Konfigurasi Firebase Dasar tidak ditemukan. Harap cek lingkungan aplikasi.", 'error');
+                        isAuthReady = true;
+                        updateNavBar();
+                        renderPage();
+                        return;
+                    }
+                    configToUse = JSON.parse(firebaseConfigString);
+                    alertMessage("Peringatan: Kunci Firebase Anda belum diisi. Hanya login Anonim yang berfungsi. Ganti kunci Anda di kode!", 'warning');
+                    console.log("[Firebase] Menggunakan Konfigurasi Lingkungan (Login Google akan GAGAL).");
+                }
+
+                // 2. Inisialisasi Aplikasi dan Layanan
+                app = initializeApp(configToUse);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug'); 
+                console.log("[Firebase] Services initialized.");
+
+
+                // 3. Atur Listener Perubahan Status Autentikasi
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        // Pengguna dianggap "logged in" jika BUKAN anonymous.
+                        isLoggedIn = !user.isAnonymous; 
+                        console.log(`[Auth State] User ID: ${userId}, Logged In: ${isLoggedIn}, Anonymous: ${user.isAnonymous}`);
+                    } else {
+                        userId = 'anon';
+                        isLoggedIn = false;
+                        console.log("[Auth State] User signed out.");
+                        // Coba sign in anonim agar ada user ID untuk watermark
+                        signInAnonymously(auth).catch(err => console.error("Error signing in anonymously after sign out:", err));
+                    }
+                    
+                    if (!isAuthReady) {
+                        isAuthReady = true;
+                        updateNavBar();
+                        renderPage(); 
+                    }
+                });
+
+                // 4. Autentikasi Awal
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else if (!auth.currentUser) {
+                    await signInAnonymously(auth);
+                }
+                
+                if (auth.currentUser && !isAuthReady) {
+                    isAuthReady = true;
+                    updateNavBar();
+                    renderPage(); 
+                }
+
+            } catch (error) {
+                console.error("Error during Firebase initialization or initial authentication:", error);
+                alertMessage(`Error Fatal: Autentikasi Gagal Total: ${error.message}. Cek kunci Anda di kode!`, 'error');
+                isAuthReady = true; 
+                updateNavBar();
+                renderPage();
+            }
+        }
+        
+        /**
+         * Mengubah UI navbar berdasarkan status autentikasi.
+         */
+        function updateNavBar() {
+            const authBtn = document.getElementById('auth-btn');
+            const authText = document.getElementById('auth-text');
+            const authIcon = document.getElementById('auth-icon');
+
+            if (!authBtn || !authText || !authIcon) return;
+            
+            if (!isAuthReady) {
+                authBtn.disabled = true;
+                authText.textContent = 'Memuat...';
+                authBtn.classList.add('bg-gray-500', 'hover:bg-gray-500');
+                authBtn.classList.remove('bg-primary', 'hover:bg-violet-600', 'bg-red-600', 'hover:bg-red-700');
+            } else if (isLoggedIn) {
+                authBtn.disabled = false;
+                authText.textContent = 'Keluar';
+                authIcon.setAttribute('data-lucide', 'log-out');
+                authBtn.classList.remove('bg-gray-500', 'hover:bg-gray-500', 'bg-primary', 'hover:bg-violet-600');
+                authBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            } else {
+                authBtn.disabled = false;
+                authText.textContent = 'Masuk';
+                authIcon.setAttribute('data-lucide', 'log-in');
+                authBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'bg-gray-500', 'hover:bg-gray-500');
+                authBtn.classList.add('bg-primary', 'hover:bg-violet-600');
+            }
+            lucide.createIcons(); 
+            
+            // Update Nav Links 
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => {
+                link.classList.remove('border-primary', 'text-white', 'font-bold');
+                link.classList.add('border-transparent', 'text-gray-300', 'font-medium');
+                
+                if (link.dataset.page === appState.currentPage) {
+                    link.classList.add('border-primary', 'text-white', 'font-bold');
+                    link.classList.remove('border-transparent', 'text-gray-300', 'font-medium');
+                }
+            });
+        }
+        
+        window.handleAuthAction = function() {
+            if (isLoggedIn) {
+                document.getElementById('confirm-modal').classList.remove('hidden');
+            } else {
+                const isCustomConfigValid = USER_CUSTOM_FIREBASE_CONFIG.apiKey && !USER_CUSTOM_FIREBASE_CONFIG.apiKey.includes('GANTI_DENGAN_API_KEY_ASLI_ANDA');
+                if (!isCustomConfigValid) {
+                    alertMessage("Peringatan Keras: Fitur Login Google TIDAK AKAN BERFUNGSI sebelum Anda GANTI KUNCI Firebase di kode.", 'error');
+                }
+                document.getElementById('login-modal').classList.remove('hidden');
+            }
+        }
+
+        window.handleGoogleLogin = async function() {
+            document.getElementById('login-modal').classList.add('hidden');
+            try {
+                // Pastikan auth sudah diinisialisasi
+                if (!auth) {
+                    alertMessage('Aplikasi belum terinisialisasi. Coba muat ulang.', 'error');
+                    return;
+                }
+                
+                const provider = new GoogleAuthProvider();
+                await signInWithPopup(auth, provider);
+                alertMessage('Berhasil Masuk dengan Google!', 'success');
+            } catch (error) {
+                console.error("Error during Google sign-in:", error);
+                // Menambahkan detail error yang spesifik
+                let errorMessage = 'Gagal Masuk. Silakan coba lagi.';
+                if (error.code === 'auth/popup-closed-by-user') {
+                    return; // Jangan tampilkan pesan error jika user menutup pop-up
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMessage = 'Gagal: Operasi tidak diizinkan. Harap **AKTIFKAN Google Sign-in** di konsol Firebase Anda (Langkah 3).';
+                } else if (error.code === 'auth/unauthorized-domain') {
+                    errorMessage = 'Gagal: Domain ini tidak sah. Pastikan Anda menambahkan domain di Konsol Firebase.';
+                } else if (error.code === 'auth/web-storage-unsupported') {
+                    errorMessage = 'Gagal: Penyimpanan web tidak didukung di browser Anda.';
+                } else if (error.message.includes('apiKey') || error.message.includes('project-id') || error.message.includes('A network error')) {
+                    errorMessage = 'Gagal: Kunci API/ID Proyek salah. Harap cek kembali Konfigurasi Firebase Anda (GANTI KUNCI di kode).';
+                }
+                alertMessage(errorMessage, 'error');
+            }
+        }
+
+        window.handleLogout = async function() {
+            try {
+                if (auth) {
+                    await signOut(auth);
+                    alertMessage('Anda telah berhasil Keluar.', 'success');
+                }
+            } catch (error) {
+                console.error("Error during sign-out:", error);
+                alertMessage('Gagal Keluar. Silakan coba lagi.', 'error');
+            }
+        }
+        
+        // --- DATA MOCKUP (Updated for VOD with clear file-like names) ---
         const SLIDER_IMAGES = [
             'https://img.freepik.com/premium-photo/3d-written-live-now-live-viewing-online-start-button-watch-movie-news-music-broadcast-video-clip-smart-tv-device-screen-computer-volume-slider-vector-illustration_181020-2319.jpg',
-            'https://media.istockphoto.com/id/1306922705/vector/live-stream-banner.jpg?s=612x612&w=0&k=20&c=NDDXT2Ftq-C-VyytMsHWgHCrcJ2d0I_pHEFz1hsw2wQ=',
-            'https://i.pinimg.com/736x/14/f0/ba/14f0ba032e62cc601e7a1685d5886f50.jpg',
-            'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRhCzhbSyz8_NLGJw7H1J5NKID2JHmS_-JmLQ&s',
-            'https://static.vecteezy.com/system/resources/thumbnails/009/169/682/small_2x/3d-live-simple-logo-icon-transparent-background-alpha-free-free-video.jpg',
+            'https://st2.depositphotos.com/6464944/44007/v/450/depositphotos_440076876-stock-illustration-stream-now-banner-live-streaming.jpg',
+            'https://media.istockphoto.com/id/1306922705/id/vektor/spanduk-live-stream.jpg?s=170667a&w=0&k=20&c=HANxa6eT9yefc37PytMktKnbwIXgXgCNDcthWKB1dkU=',
+            'https://img.pikbest.com/best/video_preview_img/2403/10058519-65e82322db1cc.jpg!w340',
+            'https://wallpapers.com/images/hd/streaming-nlg6aq16ddyd2mm7.jpg',
         ];
-
-        // MOCK_CHANNELS: Total 20 Saluran
         const ALL_CHANNELS = [
             { id: '1', name: "CNBC Indonesia", streamUrl: "http://live.cnbcindonesia.com/livecnbc/smil:cnbctv.smil/master.m3u8", logo: "https://akcdn.detik.net.id/visual/2018/02/08/707668e4-5770-4679-9b4b-9ff343b68eb6_169.jpeg?w=900&q=80", color: "bg-primary" },
             { id: '2', name: "CNN Indonesia", streamUrl: "https://live.cnnindonesia.com/livecnn/smil:cnntv.smil/playlist.m3u8", logo: "https://cdn0.iconfinder.com/data/icons/circle-icons/512/cnn.png", color: "bg-yellow-400" },
             { id: '3', name: "TVRI", streamUrl: "https://ott-balancer.tvri.go.id/live/eds/Sulsel/hls/Sulsel.m3u8", logo: "https://asset-2.tribunnews.com/tribunnews/foto/bank/images/logo-tvri-2023-9.jpg", color: "bg-teal-500" }, 
-            { id: '4', name: "TV One (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/f97316/ffffff?text=TV1", color: "bg-orange-600" },
-            { id: '5', name: "Metro TV", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h12/01.m3u8", logo: "https://i.pinimg.com/1200x/0a/03/81/0a0381180e4e9ba04b88fc345a8fe326.jpg", color: "bg-gray-600" },
-            { id: '6', name: "Kompas TV", streamUrl: "http://live.kompas.tv/livekompas/smil:kompastv.smil/playlist.m3u8", logo: "https://i.pinimg.com/736x/87/1b/30/871b3052efd2948ff11e13b8908f4c2c.jpg", color: "bg-red-700" },
-            { id: '7', name: "SCTV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/f59e0b/ffffff?text=SCTV", color: "bg-amber-500" },
-            { id: '8', name: "RCTI (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/ef4444/ffffff?text=RCTI", color: "bg-red-500" }, 
-            { id: '9', name: "Trans TV (Mock)", streamUrl: "https://video.detik.com/transtv/smil:transtv.smil/index.m3u8", logo: "https://placehold.co/100x100/3b82f6/ffffff?text=TRNS", color: "bg-blue-600" }, 
-            { id: '10', name: "Trans 7 (Mock)", streamUrl: "https://video.detik.com/trans7/smil:trans7.smil/index.m3u8", logo: "https://placehold.co/100x100/8b5cf6/ffffff?text=T7", color: "bg-purple-500" },
-            
-            { id: '11', name: "Indosiar (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/ec4899/ffffff?text=Indosiar", color: "bg-pink-600" },
+            { id: '4', name: "BERITA SATU", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h209/02.m3u8", logo: "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/64/ef/70/64ef70f3-0cb5-2b65-7e53-d13bee33b478/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/1200x600wa.png", color: "bg-orange-600" },
+            { id: '5', name: "METRO TV", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h12/01.m3u8", logo: "https://i.pinimg.com/1200x/0a/03/81/0a0381180e4e9ba04b88fc345a8fe326.jpg", color: "bg-gray-600" },
+            { id: '6', name: "KOMPAS TV", streamUrl: "http://live.kompas.tv/livekompas/smil:kompastv.smil/playlist.m3u8", logo: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTjx7xc9jesNFwhIrPOnSkCIFrS7O0DHEJIaQ&s", color: "bg-red-700" },
+            { id: '7', name: "MD NET TV", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h223/02.m3u8", logo: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSrjeex1GHiJqOnYwJdK8UgpxLm-cv2PxSCHw&s", color: "bg-amber-500" },
+            { id: '8', name: "RTV", streamUrl: "https://op-group1-swiftservehd-1.dens.tv/h/h10/01.m3u8", logo: "https://static.promediateknologi.id/crop/0x0:0x0/750x500/webp/photo/p1/691/2024/04/19/RTV_live_streaming_tv-301726366.jpg", color: "bg-red-500" }, 
+            { id: '9', name: "Trans TV", streamUrl: "https://video.detik.com/transtv/smil:transtv.smil/index.m3u8", logo: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRryiOPfaCDVn9uinL7gpxgE-_vs5TmhRU34Q&s", color: "bg-blue-600" }, 
+            { id: '10', name: "Trans 7", streamUrl: "https://video.detik.com/trans7/smil:trans7.smil/chunklist_kamiselaluada_b744100_sleng.m3u8", logo: "https://yummycoin.id/wp-content/uploads/2025/05/Logo-Trans-7-2-1024x1024.png", color: "bg-purple-500" },
+            { id: '11', name: "TVRI SPORT", streamUrl: "https://ott-balancer.tvri.go.id/live/eds/SportHD/hls/SportHD.m3u8", logo: "https://www.transvision.co.id/img/channel/new/TVRI%20SPORT.jpg", color: "bg-pink-600" },
             { id: '12', name: "ANTV (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/10b981/ffffff?text=ANTV", color: "bg-emerald-500" },
             { id: '13', name: "GTV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/2563eb/ffffff?text=GTV", color: "bg-blue-600" },
             { id: '14', name: "NET. (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/6b7280/ffffff?text=NET", color: "bg-gray-500" },
             { id: '15', name: "RTV (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/f97316/ffffff?text=RTV", color: "bg-orange-600" },
             { id: '16', name: "Jak TV (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/4c4c4c/ffffff?text=JAK", color: "bg-neutral-600" },
-            { id: '17', name: "ESPN (Mock)", streamUrl: "https://archive.org/download/Webm/big-buck-bunny_trailer.webm", logo: "https://placehold.co/100x100/dc2626/ffffff?text=ESPN", color: "bg-red-600" },
-            { id: '18', name: "Fox Sports (Mock)", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/1d4ed8/ffffff?text=F+SPORT", color: "bg-blue-700" },
-            { id: '19', name: "BRAIN FARM", streamUrl: "http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8", logo: "https://placehold.co/100x100/059669/ffffff?text=SPORT", color: "bg-green-700" },
-            { id: '20', name: "Bein Sports (Mock)", streamUrl: "https://www.w3schools.com/html/mov_bbb.mp4", logo: "https://placehold.co/100x100/f59e0b/ffffff?text=BEIN", color: "bg-amber-600" },
+            { id: '17', name: "GARAGE TV ", streamUrl: "https://stream1.sersat.com/hls/garagetv.m3u8", logo: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTfDx5f3l2NnQFjBiN3SdYMI0DMAMZYCPeOKA&s", color: "bg-red-600" },
+            { id: '18', name: "Fox Sports", streamUrl: "https://html5demos.com/assets/dizzy.mp4", logo: "https://placehold.co/100x100/1d4ed8/ffffff?text=F+SPORT", color: "bg-blue-700" },
+            { id: '19', name: "WEDO TV SPORT", streamUrl: "https://amg00735-amg00735c45-denstv-apac-7616.playouts.now.amagi.tv/ts-eu-w1-n2/playlist/amg00735-videosolutionsagfast-wedosportsasia-denstvapac/cb573e1e796c648b92d43c61cef64882847b3dcb0e6c886470af4a9765d97800dbe8ae84ae5b910c4c9e1fc061017d360439cd1dd56c49c1da63b820743c4b21fdcde00080dd0d0cb1df11292ca36265299a7369cc350f7bd2ec5a2f803ebe764c53cb017c593f88f258a9764cc59e0a957f39e8fc8b307b24455a9c5a43e6a64cb7abb70f4d8964a5b50140c07d44fa83439fd401b285dc588340d373a2419c91f98d801480e4cf598a6f4ef00d224054bdc210bac759b9d49f7a309d03472c7c74d5d3587ad35efc23624ff1feb1d20d00d0cafb42ab613cba128c4ec641e290690dd583648bd7dcf5434a38b6d05a2b47f2a7c8eb8a60bce543dc70917d0aa2c90f5e0092f34d924e0a2b99fc843e85c81484a222bf79087737ed9e5f9291be82a0e5c31adc6dfdcefa9c32555d232a36c60cf2d43d8069ea71a698477a1c5512f9d315e596c95235554a84ab57c05c4eea8cc5d0894e73e1482f77c42c99570c67c9744b79e626f6d37c4f813405883072aa0c65ce12b2e862a5e7e8e4003aa7d78817ac38a1e65ca08368c35a355706bce53f1f141c0fb7c0524d61298d159e90a08750060febfbc884b0703015361a574cc6a2d079958acf3e0e54a67723737f0418860eb5388d51a961fc7ff675ca5b6466871f96b1cde752c738762f863c/121/1920x1080_5903040/index.m3u8", logo: "https://www.film-tv-video.de/wp-content/uploads/2023/06/B_0623_Wedo_Sports_Logo_2.jpg", color: "bg-green-700" },
+            { id: '20', name: "WEDO TV MOVIE", streamUrl: "https://amg00735-amg00735c46-denstv-apac-7617.playouts.now.amagi.tv/ts-eu-w1-n2/playlist/amg00735-videosolutionsagfast-wedomoviesasia-denstvapac/cb573e1e796c648b92d43c61cef64882847b3dcb0e6c886470af4a9765d97800dbe8ae84ae5b910c4c9e1fc061017d360439cd1dd56c49c1da63b820743c4b21fdcde00080dd0d0cb1df11292ca36265299a7369cc350f7bd2ec5a2f803ebe764c53cb017c593f88f258a9764cc59e0a957f39e8fc8b307b24455a9c5a43e6a64cb7fee15f42df39a0b90140c07d40fa83439fd401e987dc5e8347d373a3459f9bf1dfd546848cb9599106f224365623709cf215f9a366b7ca8a56379d7c2d7b44298cc986ed712c944e555dfbe6b9d10f9328db9a1a91723ead019b56b96af601c008b7f171a2b8b5db4e444bcaae375a26b0f59f88ee3b37b163c6f885b711758c84721223f264cd1f7156fa9ec71990b172fcd31889b97d2062aefb269f94b6f188dae871982ccefaaef657214a6d1070e137c7a169d53de022dfa47b285a4c7bb98345c1f4b23459594680814acd031e8481f9e9ba0d34da701a28810abe600663dc246d41bf4193f8356ffb4060e10e34f8656fee289fad3ef9d5bc8f6300a0cccb7fa52d85d80bc2e63dba79334b078ce73e53373d17bfd5671d2046d051ebc1cfde621b0cd1ad8194b25037092d125c18b4eeee669e9dd43b1817cc21500a002b14990ac26cd114760c27df1bc0b81b71840b1c7794cd5a5a5f6284cdc3e8edb1f143b071c1cac06341513a64ad23774104b68d8a49ed05110e1039870b7451cf6f3024d192cdf58bbd348ef608ad3c72065cc6ff19520c5c67117af1fe53d05af28122ba94c44fc9e1992f1ff356c406008eefcf65fc9feaad263497ba4726749ed71a9f0747a11ed03f91c275aada3f6e2735445cdb9e51c26db7b5e9af875e28d72d2a5aa8119292e7bcd86345ee90385c596b74240f99f2b16ec2bef477097a96d14f199ee2993283435f322d53dfc071367d2b736efe1f551ac28aca80acd81711800ea637a10172f3d8550bc61e404afa6ca303cd17813af9fcc76da8a889cee6d7c1276c1f6d0a56a0355a5ad73cf9800be0e24832bfc9c3d2d360937af526fbaa826eb56cee9be74e999993a8af2c57460c03b581d6ea04d7b93d40b950d259624dcfddaaa733bb92972f4cc771acc50b67a53b3e7acca8f00b816b9bee2b25ea82260881247c91aeaf684c8817a626336ff882d43d6c819059e138f1ffc00642880709f7070f31de1bd4b3ff383fafec69433b8b2c08837088cda32c7a7abc9d6b206a404c2200df44533bf77c0d811fa1eff6be782aed50df57dfde922e2af1c1c419357f56aaaa12b529e2fde11a9db4/158/1280x720_3329040/index.m3u8", logo: "https://cdn.broadbandtvnews.com/wp-content/uploads/2024/09/19104444/wedotv-Movies-logo-square.jpg", color: "bg-amber-600" },
         ];
+        
+        // --- START: BAGIAN INI UNTUK VIDEO ORIGINAL ANDA (MOCK_VIDEOS) ---
+        // Ganti 'videoUrl' dengan URL yang menunjuk ke file MP4/WebM Anda yang sudah di-HOSTING.
+        const MOCK_VIDEOS = [
+            { id: 'v1', title: `Close range(scott) Full Movie`, thumbnail: `https://i.ytimg.com/vi/Kr8yANqhhK0/hq720.jpg?sqp=-oaymwEhCK4FEIIDSFryq4qpAxMIARUAAAAAGAElAADIQj0AgKJD&rs=AOn4CLAwaVtBmhwdUNdoF6ZqjU2Yspjnfw`, duration: `1:19:56`, 
+              videoUrl: "CIose Range (Scott Adkins) _ Full Movie _ ACTION.mp4" /* <--- GANTI URL MP4/WEBm ANDA DI SINI */ },
+            { id: 'v2', title: `Film Horor Terbaru `, thumbnail: `data:image/jpeg;base64,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`, duration: `1:25:53`, 
+              videoUrl: "FILM HOROR TERBARU.mp4" /* <--- GANTI URL MP4/WEBm ANDA DI SINI */ },
+            { id: 'v3', title: `Film Titisan Setan 2018 TERBARU FULL `, thumbnail: `https://www.harapanrakyat.com/wp-content/uploads/2021/03/Sinopsis-Titisan-Setan-2-Ulah-Perempuan-Misterius-yang-Merugikan.jpg`, duration: `1:15"57`, 
+              videoUrl: "Titisan Setan (2018) - Full Movie.mp4"}, 
+            { id: 'v4', title: `Film Horor Dendam Pocong Mencadin Full Movie`, thumbnail: `https://i.ytimg.com/vi/CMg0cEE-BoY/maxresdefault.jpg`, duration: `1:35:00`,
+              videoUrl: "Film Horor Dendam Pocong Mencadin Full Movie.mp4" },
+            { id: 'v5', title: `Flm Munkar Movie 2024 Terbaru`, thumbnail: `data:image/jpeg;base64,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`, duration: `1:26:55`,
+              videoUrl: "Flm Munkar Movie 2024 Terbaru Full.mp4"},
+            { id: 'v6', title: `Nobar Film MENJELANG AJAL FULL HD`, thumbnail: `data:image/jpeg;base64,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`, duration: `1:35:41`, 
+              videoUrl: "Nobar Film MENJELANG AJAL FULL HD.mp4"},
+            // Anda bisa tambahkan lebih banyak video di sini.
+        ];
+        // --- END: BAGIAN VIDEO ORIGINAL ANDA ---
         
         const NATIONAL_CHANNELS = ALL_CHANNELS.slice(0, 10);
         const INTERNATIONAL_CHANNELS = ALL_CHANNELS.slice(10, 20);
-
-        // --- Data Video On Demand Menggunakan ID YouTube yang Baru ---
-        const YOUTUBE_IDS = [
-            "rF7k75JCLZQ", "IJNPaWkPNZs", "NNFRH_NJBDQ", "OuxjsrPIp0g", "t5tX5l0-6vM",
-            "lQ0KiuMjXtU", "hYrvUSXoVmA", "afP_oTaxaMo", "1t0l0okrKCM", "j3dHKiT89bU",
-            "H7l0o99zDIY", "eOJQyondcj4", "-8fPfmoJ2u4", "5ViQwLcIEmM", "MlUbvV8zy6M",
-            "vYtakGL2YFo", "LKPeTa86TE", "OHnW4ryG7y0", "Pp2Zs7oK8tE", "SE4IGSeo9mQ"
-        ];
-
-        // MOCK_VIDEOS kini menggunakan ID YouTube yang valid
-        const MOCK_VIDEOS = YOUTUBE_IDS.map((id, index) => {
-            // Durasi mock yang sedikit berbeda untuk tiap video
-            const mockMinutes = (index % 5) + 5;
-            const mockSeconds = ((index * 3) + 10) % 60;
-            const duration = `${mockMinutes}:${mockSeconds < 10 ? '0' : ''}${mockSeconds}`;
-
-            return {
-                id: `v${index + 1}`,
-                title: `Konten Pilihan Cimory #${index + 1}: Eksklusif dan Segar`,
-                thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg`, 
-                duration: duration,
-                videoUrl: id 
-            };
-        });
         // --- END OF DATA MOCKUP ---
 
         // --- APP STATE & ROUTING ---
         const appState = {
-            currentPage: 'live-tv', // Mulai di halaman Live TV
+            currentPage: 'home', // Defaultkan ke halaman 'home' (Beranda)
             activeChannelId: ALL_CHANNELS[0].id,
-            activeVideoId: MOCK_VIDEOS[0].id, 
+            activeVideoId: MOCK_VIDEOS[0].id,
+            videoViewMode: 'catalog' // NEW: Mode tampilan video: 'catalog' atau 'single'
         };
         
         window.hlsInstance = null;
         window.sliderInterval = null;
-        let currentSlide = 0; // Global slider state
+        let currentSlide = 0; 
         const contentDiv = document.getElementById('content');
 
         // --- UTILITY & STATE MANAGEMENT ---
@@ -270,33 +496,55 @@
         window.setPage = function(pageName) {
             if (appState.currentPage !== pageName) {
                 appState.currentPage = pageName;
-                renderPage();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            } else {
-                renderPage(); 
             }
+            
+            // Jika navigasi ke 'video' dari navbar, reset ke mode katalog
+            if (pageName === 'video') {
+                appState.videoViewMode = 'catalog';
+            }
+
+            // Jika berpindah dari Live TV, bersihkan HLS instance
+            const videoPlayer = document.getElementById('vod-video-player');
+            if (videoPlayer) {
+                videoPlayer.pause();
+                videoPlayer.removeAttribute('src');
+                videoPlayer.load();
+            }
+
+            if (window.hlsInstance) {
+                window.hlsInstance.destroy();
+                window.hlsInstance = null;
+            }
+            
+            // Hentikan slider otomatis jika pindah dari home
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
+            }
+
+
+            renderPage();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
         
         function alertMessage(message, type) {
-            const container = document.body;
+            const container = document.getElementById('alert-container');
             const existingAlert = document.getElementById('custom-alert');
             if (existingAlert) existingAlert.remove();
 
             const bgColor = type === 'success' ? 'bg-green-600' : 'bg-red-600';
             const alertHtml = `
-                <div id="custom-alert" class="fixed top-5 left-1/2 -translate-x-1/2 p-4 rounded-xl shadow-2xl ${bgColor} text-white font-semibold z-[300] opacity-0 transition-opacity duration-300 transform scale-95 max-w-sm w-full text-center" role="alert">
+                <div id="custom-alert" class="fixed top-5 left-1/2 -translate-x-1/2 p-4 rounded-xl shadow-2xl ${bgColor} text-white font-semibold z-[200] opacity-0 transition-opacity duration-300 transform scale-95 max-w-sm w-full text-center" role="alert">
                     ${message}
                 </div>
             `;
             container.insertAdjacentHTML('beforeend', alertHtml);
             const alertElement = document.getElementById('custom-alert');
             
-            // Fade In
             setTimeout(() => {
                 alertElement.classList.remove('opacity-0', 'scale-95');
             }, 10);
             
-            // Fade Out and Remove
             setTimeout(() => {
                 alertElement.classList.add('opacity-0', 'scale-95');
                 alertElement.addEventListener('transitionend', () => alertElement.remove());
@@ -305,35 +553,112 @@
 
         window.handleChannelClick = function(channelId, type) {
             appState.activeChannelId = channelId;
-            // Hanya ganti halaman ke 'live-tv' jika bukan klik dari preview 'home-preview'
-            if (type !== 'home-preview') {
+            if (type !== 'selection') {
                 setPage('live-tv');
             } else {
-                // Untuk klik dari home, kita hanya mengalihkan ke Live TV tanpa perlu render ulang (setPage sudah memicu render)
-                setPage('live-tv');
+                renderPage();
             }
         }
-
-        /**
-         * FUNGSI KRITIS: Mengupdate video yang aktif dan me-render ulang halaman Video.
-         */
+        
+        // UPDATED: handleVideoClick sekarang mengatur mode dan merender halaman
         window.handleVideoClick = function(videoId) {
             console.log(`[Video Clicked] Memuat video ID: ${videoId}`);
             appState.activeVideoId = videoId;
-            setPage('video'); 
+            appState.videoViewMode = 'single'; // Paksa ke mode pemain tunggal
+            appState.currentPage = 'video'; // Pastikan kita di halaman 'video'
+            renderPage(); 
+            window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke atas ke pemain video
+        }
+        
+        /**
+         * Fungsi pembantu untuk membuat placeholder iklan.
+         * HARAP GANTI SEMUA PANGGILAN FUNGSI INI DENGAN KODE ADSENSE ASLI ANDA.
+         * @param {string} title - Judul iklan (misalnya, 'Banner Utama').
+         * @param {string} dimensions - Ukuran iklan (misalnya, '728x90').
+         * @param {string} classes - Kelas tambahan Tailwind CSS.
+         */
+        function generateAdPlaceholder(title, dimensions = '300x250', classes = '') {
+            return `
+                <div class="ad-placeholder w-full ${classes} bg-gray-700 border-2 border-dashed border-primary/50 text-gray-400 flex items-center justify-center rounded-xl p-4 text-center select-none overflow-hidden" 
+                     title="Ganti div ini dengan kode AdSense/Iklan Anda">
+                    <div>
+                        <i data-lucide="monitor-play" class="w-6 h-6 mx-auto mb-2 text-primary"></i>
+                        <p class="text-xs font-semibold uppercase tracking-wider">AREA IKLAN: ${title}</p>
+                        <p class="text-xs mt-1">Ganti dengan kode AdSense Anda (${dimensions})</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        /**
+         * Helper untuk membuat daftar saluran horizontal yang bisa digeser (Home & VOD).
+         */
+        function generateChannelListHtml(channels, context) {
+            return `
+                <div class="horizontal-scroll flex overflow-x-auto space-x-4 py-2">
+                    ${channels.map(channel => {
+                        const channelNameDisplay = channel.name.replace(/\s*\(Mock\)\s*/g, ''); // Hapus (Mock) dari tampilan
+                        return `
+                            <div 
+                                class="flex-shrink-0 w-36 h-28 md:w-44 md:h-32 ${channel.color} bg-opacity-30 rounded-xl shadow-lg border-2 border-transparent hover:border-primary cursor-pointer transition duration-300 transform hover:scale-[1.03]"
+                                onclick="handleChannelClick('${channel.id}', '${context}')"
+                            >
+                                <div class="flex flex-col items-center justify-center h-full p-2">
+                                    <img src="${channel.logo}" alt="${channelNameDisplay}" class="w-10 h-10 rounded-full object-cover mb-1 border-2 border-white shadow-md" onerror="this.onerror=null;this.src='https://placehold.co/40x40/1f2937/ffffff?text=TV';" />
+                                    <span class="text-sm font-bold text-white text-center line-clamp-2">${channelNameDisplay}</span>
+                                    <span class="text-[10px] text-gray-300 mt-1">Tonton Sekarang</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
-        window.handleLogin = function(event) {
-            event.preventDefault();
-            document.getElementById('login-modal').classList.add('hidden');
-            alertMessage('Berhasil Masuk! (Simulasi)', 'success');
+        /**
+         * Helper untuk menginisialisasi HLS atau memuat MP4/WebM biasa.
+         */
+        window.initHlsPlayer = function(videoUrl, playerId) {
+            const video = document.getElementById(playerId);
+            if (!video) return;
+
+            // Bersihkan instance HLS sebelumnya
+            if (window.hlsInstance) {
+                window.hlsInstance.destroy();
+                window.hlsInstance = null;
+            }
+            
+            // Hapus src dan set ulang untuk video native
+            video.removeAttribute('src');
+            video.load();
+
+            // Cek apakah URL adalah HLS (.m3u8)
+            if (videoUrl.endsWith('.m3u8') && Hls.isSupported()) {
+                window.hlsInstance = new Hls();
+                window.hlsInstance.loadSource(videoUrl);
+                window.hlsInstance.attachMedia(video);
+                window.hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play();
+                });
+                window.hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        console.error(`HLS Fatal Error: ${data.type} - ${data.details}`);
+                        video.src = videoUrl; // Fallback to native video tag
+                        video.onerror = () => alertMessage(`Gagal memuat streaming ${videoUrl}. Coba lagi atau gunakan browser lain.`, 'error');
+                        video.load();
+                        video.play();
+                        window.hlsInstance.destroy();
+                        window.hlsInstance = null;
+                    }
+                });
+            } else {
+                // Untuk MP4, WebM, atau jika HLS tidak didukung
+                video.src = videoUrl;
+                video.load();
+                video.play();
+            }
         }
 
-        window.handleGoogleLogin = function(event) {
-            event.preventDefault();
-            document.getElementById('login-modal').classList.add('hidden');
-            alertMessage('Masuk dengan Google Berhasil! (Simulasi)', 'success');
-        }
 
         // --- SLIDER LOGIC ---
         function updateSlider(index) {
@@ -363,417 +688,329 @@
             }
         }
 
+        // --- PAGE RENDERERS (updated) ---
 
-        // --- HTML GENERATOR FUNCTIONS ---
-
-        function generateVideoGridHtml(videos) {
-            // Urutkan video aktif agar muncul di awal daftar video terkait
-            const sortedVideos = [...videos].sort((a, b) => {
-                if (a.id === appState.activeVideoId) return -1;
-                if (b.id === appState.activeVideoId) return 1;
-                return 0;
-            });
-
-            return `
-                <div class="horizontal-scroll flex space-x-6 pb-4 overflow-x-auto">
-                    ${sortedVideos.map(video => {
-                        const isActive = video.id === appState.activeVideoId && appState.currentPage === 'video';
-                        const borderColor = isActive ? 'border-4 border-secondary' : 'border-2 border-transparent';
-                        const shadowColor = isActive ? 'shadow-secondary/50' : 'shadow-lg';
-
-                        return `
-                            <div 
-                                class="flex-shrink-0 w-64 sm:w-80 cursor-pointer rounded-xl overflow-hidden shadow-lg hover:shadow-primary/50 transition duration-300 transform hover:scale-[1.02] bg-gray-800 ${borderColor} ${shadowColor}"
-                                data-video-id="${video.id}"
-                                onclick="handleVideoClick('${video.id}')"
-                            >
-                                <div class="relative">
-                                    <img 
-                                        src="${video.thumbnail}" 
-                                        alt="${video.title}" 
-                                        class="w-full h-auto object-cover"
-                                        onerror="this.onerror=null;this.src='https://placehold.co/300x180/4b5563/ffffff?text=VOD+THUMBNAIL';"
-                                    >
-                                    <div class="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition duration-300">
-                                        <i data-lucide="play-circle" class="w-16 h-16 text-white fill-primary/80"></i>
-                                    </div>
-                                    <span class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-medium">${video.duration}</span>
-                                </div>
-                                <div class="p-3">
-                                    <h3 class="text-sm font-semibold ${isActive ? 'text-secondary' : 'text-gray-200'} truncate">${video.title}</h3>
-                                    ${isActive ? '<span class="text-[10px] bg-secondary text-gray-900 font-bold px-2 py-0.5 rounded-full mt-1 inline-block">SEDANG DIPUTAR</span>' : ''}
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        }
-        
-        function generateChannelListHtml(channels, type = 'selection') {
-            const clickHandler = (channelId) => `handleChannelClick('${channelId}', '${type}')`; 
-            const activeChannelId = appState.activeChannelId;
+        function renderHomePage() {
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
+            }
             
-            return `
-                <div class="horizontal-scroll flex space-x-4 pb-4 overflow-x-auto">
-                    ${channels.map(channel => {
-                        const isActive = (channel.id === activeChannelId && appState.currentPage === 'live-tv');
-                        const baseClasses = "channel-item flex-shrink-0 cursor-pointer p-3 rounded-xl transition duration-300 w-28 sm:w-36 flex flex-col items-center justify-start group";
-                        const bgColor = channel.color || 'bg-gray-700';
-                        const borderClasses = isActive 
-                            ? 'border-4 border-secondary shadow-xl shadow-secondary/30' 
-                            : 'border-2 border-transparent hover:border-primary/50';
-                            
-                        const itemBg = isActive ? 'bg-white/10' : `${bgColor} bg-opacity-20 hover:bg-opacity-30`;
-                            
-                        return `
-                            <div 
-                                class="${baseClasses} ${itemBg} ${borderClasses}"
-                                data-channel-id="${channel.id}"
-                                onclick="${clickHandler(channel.id)}"
-                            >
-                                <img 
-                                    src="${channel.logo}" 
-                                    alt="${channel.name} Logo" 
-                                    onerror="this.onerror=null;this.src='https://placehold.co/100x100/1f2937/ffffff?text=TV';"
-                                    class="w-16 h-16 rounded-full object-cover mb-2 border-2 border-white/50 shadow-md transform group-hover:scale-105 transition duration-200"
-                                >
-                                <span class="text-xs sm:text-sm font-semibold text-white text-center h-8 overflow-hidden line-clamp-2">${channel.name}</span>
-                                ${isActive ? '<span class="text-[10px] bg-secondary text-gray-900 font-bold px-2 py-0.5 rounded-full mt-1">LIVE</span>' : ''}
+            // RESET currentSlide saat masuk ke Beranda
+            currentSlide = 0; 
+
+            const homeHtml = `
+                <!-- Hero Slider -->
+                <div class="relative overflow-hidden rounded-2xl shadow-2xl bg-gray-800 mb-6 h-64 md:h-96">
+                    <!-- Slider HTML -->
+                    <div id="slider-container" class="flex transition-transform duration-700 ease-in-out h-full">
+                        ${SLIDER_IMAGES.map((img, index) => `
+                            <div class="flex-shrink-0 w-full h-full relative" style="width: 100%;">
+                                <img src="${img}" alt="Slider Image ${index + 1}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/1200x500/1f2937/d1d5db?text=GAMBAR+SLIDER+GAGAL';" />
+                                <div class="absolute inset-0 bg-gradient-to-t from-gray-900/70 to-transparent flex items-end p-6 md:p-10">
+                                    <h2 class="text-3xl md:text-5xl font-extrabold text-white leading-tight">TONTON LIVE STREAMING TERBAIK</h2>
+                                </div>
                             </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        }
-        
-        /**
-         * FUNGSI KRITIS YANG DIUBAH: Menggenerasi HTML Watermark
-         */
-        function getWatermarkHtml() {
-            return `
-                <!-- WATERMARK OVERLAY: Ditempatkan di dalam kontainer pemutar video, terpusat -->
-                <div class="watermark-overlay absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
-                    <div class="watermark-style">
-                        Stream Cimory TV
+                        `).join('')}
+                    </div>
+
+                    <!-- Slider Dots -->
+                    <div id="slider-dots" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                        ${SLIDER_IMAGES.map((_, index) => `
+                            <span class="dot w-3 h-3 rounded-full bg-white/50 transition-all duration-300 cursor-pointer ${index === 0 ? 'bg-white scale-125' : ''}" onclick="currentSlide = ${index}; updateSlider(${index});"></span>
+                        `).join('')}
                     </div>
                 </div>
-                <!-- END WATERMARK -->
+
+                <!-- IKLAN BANNER UTAMA (GANTI DENGAN KODE ADSENSE ANDA) -->
+                ${generateAdPlaceholder('Banner Utama', '728x90', 'h-24 md:h-32 mb-10')} 
+
+                <!-- Channel Categories Section -->
+                <h2 class="text-3xl font-bold text-white mb-6">Live TV Pilihan</h2>
+                
+                <div class="mb-10">
+                    <h3 class="text-xl font-semibold text-primary mb-4 border-b border-gray-700 pb-2">Saluran Nasional</h3>
+                    <!-- Saluran Nasional dengan horizontal scroll -->
+                    ${generateChannelListHtml(NATIONAL_CHANNELS, 'home')}
+                </div>
+                
+                <div class="mb-10">
+                    <h3 class="text-xl font-semibold text-primary mb-4 border-b border-gray-700 pb-2">Saluran Lainnya</h3>
+                    <!-- Saluran Lainnya dengan horizontal scroll -->
+                    ${generateChannelListHtml(INTERNATIONAL_CHANNELS, 'home')}
+                </div>
             `;
+            
+            contentDiv.innerHTML = homeHtml;
+            lucide.createIcons();
+            
+            // Re-initialize slider logic
+            updateSlider(currentSlide);
+            if (!window.sliderInterval) { 
+                window.sliderInterval = setInterval(nextSlide, 5000); 
+            }
         }
 
 
-        /**
-         * Menginisialisasi Pemutar Video (Mendukung HLS dan MP4)
-         */
-        window.initHlsPlayer = function(streamUrl, videoElementId = 'hls-video-player') {
-            const video = document.getElementById(videoElementId);
-            const playerContainer = document.getElementById('player-container');
-            
-            if (!video || !playerContainer) {
-                console.error(`Video player element atau container (${videoElementId}) tidak ditemukan.`);
-                return;
+        function renderLiveTVPage() {
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
             }
-
+            
+            // HLS Instance harus dimatikan jika ada, sebelum player baru di-render
             if (window.hlsInstance) {
                 window.hlsInstance.destroy();
                 window.hlsInstance = null;
             }
-            
-            const existingError = playerContainer.querySelector('#error-message');
-            if(existingError) existingError.remove();
 
-            const isHlsStream = streamUrl.toLowerCase().endsWith('.m3u8');
-            
-            if (isHlsStream && typeof Hls !== 'undefined' && Hls.isSupported()) {
-                const hls = new Hls();
-                window.hlsInstance = hls;
-                
-                console.log(`[Player Init] Memuat URL Stream (HLS.js): ${streamUrl}`);
-                
-                hls.loadSource(streamUrl);
-                hls.attachMedia(video);
-                
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    video.play().catch(error => console.warn("[Player Warning] Autoplay mungkin diblokir.", error));
-                });
-                
-                hls.on(Hls.Events.ERROR, function (event, data) {
-                    if (data.fatal) {
-                        console.error("[Player Error] HLS Fatal Error:", data);
-                        // Fallback message
-                        const errorMessage = document.createElement('div');
-                        errorMessage.id = 'error-message';
-                        errorMessage.className = "absolute inset-0 flex items-center justify-center bg-red-900/70 p-4 text-white text-lg font-bold rounded-xl z-30";
-                        errorMessage.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6 mr-2"></i> STREAMING GAGAL: Saluran tidak tersedia atau URL tidak valid. Menggunakan video mock MP4.';
-                        
-                        playerContainer.appendChild(errorMessage);
-                        lucide.createIcons();
-                        
-                        hls.detachMedia();
-                        video.src = "https://www.w3schools.com/html/mov_bbb.mp4"; 
-                        video.classList.remove('hidden'); 
-                        video.play().catch(e => console.log('[Player Warning] Mock playback failed', e));
-                    }
-                });
-            } else if (isHlsStream && video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = streamUrl;
-                video.addEventListener('loadedmetadata', function() {
-                    video.play().catch(error => console.warn("[Player Warning] Autoplay gagal di pemutar native (Native HLS).", error));
-                });
-            } else {
-                let finalUrl = streamUrl;
-                if (isHlsStream || !streamUrl.toLowerCase().match(/\.(mp4|webm|ts)$/)) {
-                    finalUrl = "https://www.w3schools.com/html/mov_bbb.mp4"; 
-                }
-
-                video.src = finalUrl;
-                video.load(); 
-                video.addEventListener('loadedmetadata', function() {
-                    video.play().catch(error => console.warn("[Player Warning] Autoplay gagal di pemutar native.", error));
-                });
-                
-                video.onerror = function() {
-                    const errorMessage = document.createElement('div');
-                    errorMessage.id = 'error-message';
-                    errorMessage.className = "absolute inset-0 flex items-center justify-center bg-red-900/70 p-4 text-white text-lg font-bold rounded-xl z-30";
-                    errorMessage.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6 mr-2"></i> KONTEN TIDAK DAPAT DIPUTAR: URL Video tidak valid.';
-                    
-                    playerContainer.appendChild(errorMessage);
-                    lucide.createIcons();
-                    
-                    video.src = "https://archive.org/download/Webm/big-buck-bunny_trailer.webm"; 
-                    video.play().catch(e => console.log('[Player Warning] Double-fallback playback failed', e));
-                };
-            }
-        }
-        
-        // --- PAGE RENDERING IMPLEMENTATION ---
-
-        function renderHomePage() {
-            // ... (Kode renderHomePage tidak berubah)
-            return `
-                <!-- Image Slider (Carousel) -->
-                <div class="relative w-full overflow-hidden rounded-2xl shadow-2xl mb-12 h-60 md:h-96">
-                    <div id="slider-container" class="flex w-full h-full transition-transform duration-700 ease-in-out">
-                        ${SLIDER_IMAGES.map((imgUrl, index) => `
-                            <div class="flex-shrink-0 w-full h-full relative" data-slide="${index}">
-                                <img src="${imgUrl}" 
-                                     alt="Banner ${index + 1}" 
-                                     class="w-full h-full object-cover"
-                                     onerror="this.onerror=null;this.src='https://placehold.co/1200x500/1e293b/94a3b8?text=Promo';"
-                                >
-                                <div class="absolute inset-0 bg-black/40 flex items-center p-8 md:p-16">
-                                    <h1 class="text-3xl sm:text-5xl font-extrabold text-white leading-tight drop-shadow-lg max-w-lg">
-                                        Stream <span class="text-secondary">Konten Terbaik</span> Sekarang
-                                    </h1>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    
-                    <!-- Slider Dots -->
-                    <div id="slider-dots" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-3">
-                        ${SLIDER_IMAGES.map((_, index) => `
-                            <button class="dot w-3 h-3 rounded-full bg-white/50 transition-all duration-300 hover:bg-white" onclick="updateSlider(${index}); currentSlide=${index}"></button>
-                        `).join('')}
-                    </div>
-                </div>
-
-                <!-- Saluran Nasional (10 Saluran - Horizontal Scrollable) -->
-                <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
-                    <i data-lucide="tv" class="w-7 h-7 mr-3 text-primary"></i> Saluran Nasional
-                </h2>
-                ${generateChannelListHtml(NATIONAL_CHANNELS, 'home-preview')}
-                <hr class="border-gray-800 my-8">
-
-                <!-- Saluran Internasional (10 Saluran - Horizontal Scrollable) -->
-                <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
-                    <i data-lucide="globe" class="w-7 h-7 mr-3 text-red-500"></i> Saluran Internasional
-                </h2>
-                ${generateChannelListHtml(INTERNATIONAL_CHANNELS, 'home-preview')}
-                <hr class="border-gray-800 my-8">
-            `;
-        }
-        
-        function renderLiveTVPage() {
-            // ... (Kode renderLiveTVPage tidak berubah)
             const activeChannel = ALL_CHANNELS.find(c => c.id === appState.activeChannelId) || ALL_CHANNELS[0];
-            const NATIONAL_CHANNELS_LIST = ALL_CHANNELS.slice(0, 10);
-            const INTERNATIONAL_CHANNELS_LIST = ALL_CHANNELS.slice(10, 20);
+            const streamUrl = activeChannel.streamUrl;
+            // Menampilkan ID pengguna untuk watermark, hanya 8 karakter pertama
+            const watermarkId = userId === 'Stream' ? 'Cimory TV' : userId.substring(0, 8).toUpperCase(); 
 
-            return `
-                <h1 class="text-4xl font-bold text-white mb-8">Live TV Streaming</h1>
+            const tvHtml = `
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <!-- Player Area (Main Video) -->
+                    <div class="lg:w-3/4">
+                        <div id="player-container" class="relative bg-black rounded-xl overflow-hidden shadow-2xl aspect-video mb-6">
+                            <!-- Watermark Layer (Menggunakan User ID Dinamis) -->
+                            <div id="watermark-overlay" class="watermark-overlay absolute inset-0 z-10 p-4">
+                                <span class="watermark-text">Cimorty TV</span>
+                            </div>
+                            
+                            <video id="hls-video-player" controls autoplay class="z-20"></video>
+                        </div>
 
-                <!-- Main Video Player (Full Width) -->
-                <div class="relative aspect-video bg-black rounded-xl shadow-2xl overflow-hidden mb-10" id="player-container">
-                    <video id="hls-video-player" controls autoplay class="w-full h-full bg-black">
-                        Browser Anda tidak mendukung tag video.
-                    </video>
-                    
-                    ${getWatermarkHtml()}
+                        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-primary/50">
+                            <div class="flex items-center mb-2">
+                                <span class="relative flex h-3 w-3 mr-3">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                </span>
+                                <h1 class="text-2xl md:text-3xl font-bold text-white">${activeChannel.name}</h1>
+                            </div>
+                            <p class="text-gray-400">Sedang Tayang: <span class="text-secondary font-medium">Siaran Lansung</span></p>
+                            <p class="text-xs text-gray-500 mt-2"><span class="text-white"></span></p>
+                        </div>
+                    </div>
 
-                    <!-- Channel Info Overlay -->
-                    <div class="absolute top-4 left-4 p-2 bg-primary/80 rounded-lg shadow-lg text-white font-semibold flex items-center z-30">
-                        <i data-lucide="video" class="w-5 h-5 mr-2"></i> 
-                        <span class="text-sm">LIVE: ${activeChannel.name}</span>
+                    <!-- Channel & AD Sidebar (LIVE CHAT TELAH DIHILANGKAN SESUAI PERMINTAAN) -->
+                    <div class="lg:w-1/4 flex flex-col gap-6">
+                        
+                        <!-- IKLAN SKYSCRAPER SIDEBAR (GANTI DENGAN KODE ADSENSE ANDA) -->
+                        ${generateAdPlaceholder('Skyscraper Sidebar', '300x600', 'h-72 lg:h-96')} 
+
+                        <!-- Channel Selection (Dibuat VERTICAL untuk kemudahan seleksi) -->
+                        <div class="bg-gray-800 p-4 rounded-xl shadow-lg overflow-y-auto max-h-[500px] lg:max-h-full">
+                            <h2 class="text-xl font-bold text-primary mb-4 flex items-center">
+                                <i data-lucide="list" class="w-5 h-5 mr-2"></i> Daftar Saluran
+                            </h2>
+                            <div class="flex flex-col space-y-3">
+                                ${ALL_CHANNELS.map(channel => {
+                                    const isActive = channel.id === appState.activeChannelId;
+                                    const bgColor = isActive ? 'bg-primary/20 border-primary' : 'bg-gray-700 hover:bg-gray-600 border-gray-700';
+                                    const channelNameDisplay = channel.name.replace(/\s*\(Mock\)\s*/g, '');
+                                    return `
+                                        <div 
+                                            class="flex items-center p-3 rounded-lg cursor-pointer transition duration-200 border-2 ${bgColor}"
+                                            onclick="handleChannelClick('${channel.id}', 'selection')"
+                                        >
+                                            <img src="${channel.logo}" alt="${channelNameDisplay}" class="w-8 h-8 rounded-full object-cover mr-3 border border-white/50" onerror="this.onerror=null;this.src='https://placehold.co/32x32/1f2937/ffffff?text=TV';" />
+                                            <span class="flex-grow text-sm font-medium truncate">${channelNameDisplay}</span>
+                                            ${isActive ? '<i data-lucide="monitor-play" class="w-5 h-5 text-secondary"></i>' : ''}
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
                     </div>
                 </div>
-
-                <section class="mb-10">
-                    <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
-                        <i data-lucide="tv" class="w-7 h-7 mr-3 text-primary"></i> Saluran TV (Nasional & Lokal)
-                        <span class="text-sm text-gray-400 ml-auto hidden sm:block">Total ${NATIONAL_CHANNELS_LIST.length} Saluran</span>
-                    </h2>
-                    ${generateChannelListHtml(NATIONAL_CHANNELS_LIST, 'selection')}
-                </section>
-
-                <hr class="border-gray-800 my-8">
-
-                <section class="mb-10">
-                    <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
-                        <i data-lucide="globe" class="w-7 h-7 mr-3 text-red-500"></i> Saluran Internasional
-                        <span class="text-sm text-gray-400 ml-auto hidden sm:block">Total ${INTERNATIONAL_CHANNELS_LIST.length} Saluran</span>
-                    </h2>
-                    ${generateChannelListHtml(INTERNATIONAL_CHANNELS_LIST, 'selection')}
-                </section>
             `;
+            
+            contentDiv.innerHTML = tvHtml;
+            lucide.createIcons();
+            
+            window.initHlsPlayer(streamUrl, 'hls-video-player');
         }
+
 
         function renderTVOnDemandPage() {
-            return `
-                <h1 class="text-4xl font-bold text-white mb-8">TV On Demand & Catch Up TV</h1>
-
-                <div class="space-y-10">
-                    <section>
-                        <!-- PERUBAHAN TEKS 1: Film Favorit -->
-                        <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
-                            <i data-lucide="popcorn" class="w-6 h-6 mr-2 text-primary"></i> Film Favorit
-                        </h2>
-                        <p class="text-gray-400 mb-4">Tonton kembali acara-acara lokal favorit Anda yang terlewatkan. Klik video untuk memutar di halaman Video.</p>
-                        ${generateVideoGridHtml(MOCK_VIDEOS.slice(0, 8))}
-                    </section>
-
-                    <hr class="border-gray-800">
-
-                    <section>
-                        <!-- PERUBAHAN TEKS 2: Dokumenter & Edukasi DIGANTI Film Serial -->
-                        <h2 class="text-3xl font-bold text-white mb-4 flex items-center">
-                            <i data-lucide="clapperboard" class="w-6 h-6 mr-2 text-secondary"></i> Film Serial
-                        </h2>
-                        <p class="text-gray-400 mb-4">Konten informatif dari berbagai sumber terpercaya. Klik video untuk memutar di halaman Video.</p>
-                        ${generateVideoGridHtml(MOCK_VIDEOS.slice(8, 16))}
-                    </section>
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
+            }
+            
+            const vodHtml = `
+                <h1 class="text-4xl font-extrabold text-white mb-8 border-b border-gray-700 pb-2">Siaran Langsung Berita Local</h1>
+                
+                <div class="bg-gray-800 p-6 rounded-xl shadow-2xl mb-8">
+                    <p class="text-lg text-gray-300 mb-4">Berita Siaran Langsung!</p>
+                    
+                    <h2 class="text-2xl font-bold text-primary mb-4">Siaran Lansung Berita Local</h2>
+                    ${generateChannelListHtml(ALL_CHANNELS, 'tv-on-demand')}
                 </div>
+                
+                <!-- IKLAN BANNER TENGAH VOD (GANTI DENGAN KODE ADSENSE ANDA) -->
+                ${generateAdPlaceholder('Banner Tengah VOD', '728x90', 'h-24 md:h-32 mb-8')}
             `;
-        }
-
-        /**
-         * FUNGSI KRITIS: Halaman Video kini DENGAN Watermark
-         */
-        function renderVideoPage() {
-            // ... (Kode renderVideoPage tidak berubah)
-            const activeVideo = MOCK_VIDEOS.find(v => v.id === appState.activeVideoId) || MOCK_VIDEOS[0];
-            const relatedVideos = MOCK_VIDEOS.filter(v => v.id !== activeVideo.id); 
-            const youtubeId = activeVideo.videoUrl;
-
-            return `
-                <div class="space-y-8">
-                    <!-- KOTAK UTAMA: Pemutar Video (YouTube Iframe) -->
-                    <div class="relative aspect-video bg-black rounded-xl shadow-2xl overflow-hidden" id="video-player-container">
-                        <!-- YouTube Iframe -->
-                        <iframe class="absolute top-0 left-0 w-full h-full"
-                            src="https://www.youtube.com/embed/${youtubeId}?autoplay=1&controls=1&rel=0"
-                            title="${activeVideo.title}"
-                            frameborder="0"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowfullscreen>
-                        </iframe>
-                        
-                        <!-- WATERMARK DITAMBAHKAN DI SINI (Di atas Iframe) -->
-                        ${getWatermarkHtml()}
-                    </div>
-
-                    <!-- Judul Video - Tampil di bawah pemutar -->
-                    <div class="border-b border-gray-800 pb-4">
-                        <h1 class="text-3xl md:text-4xl font-bold text-white leading-tight">
-                            ${activeVideo.title}
-                        </h1>
-                    </div>
-
-                    <!-- SEKSI BAWAH: Video Lainnya (SCROLL HORIZONTAL) -->
-                    <section class="pt-4">
-                        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
-                            <i data-lucide="align-start" class="w-7 h-7 mr-3 text-secondary"></i> Video Lainnya Dari Cimory TV
-                        </h2>
-                        ${generateVideoGridHtml(relatedVideos)}
-                    </section>
-                </div>
-            `;
+            
+            contentDiv.innerHTML = vodHtml;
+            lucide.createIcons();
         }
         
-        /**
-         * FUNGSI UTAMA: Mengatur rute dan merender konten
-         */
-        function renderPage() {
-            // Logika untuk menyorot link navigasi yang aktif
-            document.querySelectorAll('.nav-link').forEach(link => {
-                link.classList.remove('text-primary', 'border-primary', 'font-bold');
-                link.classList.add('text-gray-300', 'border-transparent', 'font-medium');
-                if (link.dataset.page === appState.currentPage) {
-                    link.classList.add('text-primary', 'border-primary', 'font-bold');
-                    link.classList.remove('text-gray-300', 'border-transparent', 'font-medium');
-                }
-            });
-
-            let html = '';
-            switch (appState.currentPage) {
-                case 'home':
-                    html = renderHomePage();
-                    break;
-                case 'live-tv':
-                    html = renderLiveTVPage();
-                    break;
-                case 'tv-on-demand':
-                    html = renderTVOnDemandPage();
-                    break;
-                case 'video':
-                    html = renderVideoPage(); 
-                    break;
-                default:
-                    html = `
-                        <div class="text-center py-16">
-                            <i data-lucide="frown" class="w-16 h-16 mx-auto text-gray-500 mb-4"></i>
-                            <h2 class="text-3xl font-bold text-white">Halaman Tidak Ditemukan</h2>
-                            <p class="text-gray-400 mt-2">Silakan kembali ke <a href="#" onclick="setPage('home')" class="text-primary hover:underline">Beranda</a>.</p>
+        // FUNGSI UTAMA UNTUK RENDER HALAMAN VIDEO (Katalog atau Pemain Tunggal)
+        function renderVideoPage() {
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+                window.sliderInterval = null;
+            }
+            
+            // Logika untuk menampilkan Katalog Video
+            if (appState.videoViewMode === 'catalog') {
+                
+                // Siapkan array untuk menampung video
+                let videoAndAdHtml = MOCK_VIDEOS.map(video => {
+                    // Channel tidak lagi digunakan untuk logo, hanya untuk mock data
+                    // const channel = ALL_CHANNELS[video.id.substring(1) % ALL_CHANNELS.length]; 
+                    return `
+                        <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 transition duration-300 hover:shadow-primary/50 hover:scale-[1.02] cursor-pointer" onclick="handleVideoClick('${video.id}')">
+                            <div class="relative">
+                                <!-- Thumbnail Video -->
+                                <img src="${video.thumbnail}" alt="${video.title}" class="w-full h-auto object-cover aspect-video" onerror="this.onerror=null;this.src='https://placehold.co/400x250/4b5563/ffffff?text=VIDEO+ORIGINAL';" />
+                                <span class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-medium">${video.duration}</span>
+                            </div>
+                            <div class="p-4">
+                                <!-- PERUBAHAN: Menghapus div logo dan menyederhanakan info channel menjadi teks saja -->
+                                <p class="text-sm font-semibold text-gray-400 mb-2">Cimory video</p>
+                                <h3 class="text-lg font-bold text-gray-100 line-clamp-2">${video.title}</h3>
+                            </div>
                         </div>
                     `;
-            }
+                });
 
-            contentDiv.innerHTML = html;
+                // PERUBAHAN: Menghapus div peringatan "Layout Rapi!" yang mengganggu pandangan.
+
+                const catalogHtml = `
+                    <h1 class="text-4xl font-extrabold text-white mb-8 border-b border-secondary pb-2">Video Free Film Full Movie</h1>
+
+                    <p class="text-lg text-gray-300 mb-8">Pilih video di bawah ini untuk mulai menonton</p>
+                    
+                    <!-- Grid Video -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        ${videoAndAdHtml.join('')}
+                    </div>
+                `;
+                
+                contentDiv.innerHTML = catalogHtml;
+                lucide.createIcons();
+                return;
+            }
+            
+            // --- LOGIKA PEMAIN VIDEO TUNGGAL ---
+            const activeVideo = MOCK_VIDEOS.find(v => v.id === appState.activeVideoId);
+            
+            if (!activeVideo) {
+                contentDiv.innerHTML = `<div class="text-center bg-gray-800 p-8 rounded-xl shadow-lg mt-12"><i data-lucide="alert-triangle" class="w-12 h-12 text-secondary mb-4 mx-auto"></i><h2 class="text-2xl font-bold">Video Tidak Ditemukan</h2><p class="text-gray-400 mt-2">Silakan kembali ke <a href="#" onclick="setPage('home')" class="text-primary hover:underline">Beranda</a>.</p></div>`;
+                lucide.createIcons();
+                return;
+            }
+            
+            const relatedVideos = MOCK_VIDEOS.filter(v => v.id !== activeVideo.id).slice(0, 10);
+            
+            // Membangun HTML untuk video terkait dengan scroll horizontal
+            const relatedVideosHtml = relatedVideos.map(video => {
+                // Channel tidak lagi digunakan untuk logo, hanya untuk mock data
+                // const channel = ALL_CHANNELS[video.id.substring(1) % ALL_CHANNELS.length]; 
+                return `
+                    <div class="flex-shrink-0 w-64 md:w-72 bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 transition duration-300 hover:shadow-primary/50 hover:scale-[1.02] cursor-pointer" onclick="handleVideoClick('${video.id}')">
+                        <div class="relative">
+                            <!-- Placeholder Thumbnail -->
+                            <img src="${video.thumbnail}" alt="${video.title}" class="w-full h-auto object-cover aspect-video" onerror="this.onerror=null;this.src='https://placehold.co/400x250/4b5563/ffffff?text=VIDEO+ORIGINAL';" />
+                            <span class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-medium">${video.duration}</span>
+                        </div>
+                        <div class="p-4">
+                            <!-- PERUBAHAN: Menghapus div logo dan menyederhanakan info channel menjadi teks saja -->
+                            <p class="text-sm font-semibold text-gray-400 mb-2">CimoryTV & Video Free </p>
+                            <h3 class="text-lg font-bold text-gray-100 line-clamp-2">${video.title}</h3>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+
+            const videoHtml = `
+                <!-- Judul halaman pemutar tunggal yang diperbarui -->
+                <h1 class="text-4xl font-extrabold text-white mb-6 border-b border-secondary pb-2">Sedang Menonton</h1>
+
+                <!-- Main Video Player & Info -->
+                <div class="lg:w-full"> 
+                    <div id="vod-player-container" class="relative bg-black rounded-xl overflow-hidden shadow-2xl aspect-video mb-6">
+                        <!-- VOD Video Player (Native MP4/WebM) -->
+                        <video id="vod-video-player" controls autoplay class="z-20"></video>
+                    </div>
+
+                    <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-secondary/50 mb-10">
+                        <h2 class="text-3xl font-bold text-secondary mb-2">${activeVideo.title}</h2>
+                        <p class="text-gray-300 leading-relaxed"></p>
+                        <p class="text-sm text-red-400 mt-2"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Terkait - Horizontal Scroll -->
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-primary mb-4 flex items-center">
+                        <i data-lucide="rocket" class="w-5 h-5 mr-2"></i> Video Free Lainnya
+                    </h2>
+                    <div class="horizontal-scroll flex overflow-x-auto space-x-6 pb-2">
+                        ${relatedVideosHtml}
+                    </div>
+                </div>
+            `;
+            
+            contentDiv.innerHTML = videoHtml;
             lucide.createIcons();
             
-            if (appState.currentPage === 'home') {
-                currentSlide = 0;
-                updateSlider(currentSlide);
-                if (!window.sliderInterval) {
-                    window.sliderInterval = setInterval(nextSlide, 5000);
-                }
-            } else if (appState.currentPage === 'live-tv') {
-                const activeChannel = ALL_CHANNELS.find(c => c.id === appState.activeChannelId);
-                if (activeChannel) {
-                    initHlsPlayer(activeChannel.streamUrl, 'hls-video-player');
-                }
-            } 
+            // Memuat video menggunakan player native
+            window.initHlsPlayer(activeVideo.videoUrl, 'vod-video-player');
         }
-        window.renderPage = renderPage; 
-        
+
+        window.renderPage = function() {
+            if (window.sliderInterval) {
+                clearInterval(window.sliderInterval);
+            }
+            
+            updateNavBar();
+            
+            if (!isAuthReady) {
+                contentDiv.innerHTML = '<div class="text-center text-gray-500 py-12">Menyiapkan koneksi aman...</div>';
+                return;
+            }
+
+            switch (appState.currentPage) {
+                case 'live-tv':
+                    renderLiveTVPage();
+                    break;
+                case 'tv-on-demand':
+                    renderTVOnDemandPage();
+                    break;
+                case 'video':
+                    renderVideoPage(); // Panggil fungsi yang sudah di-update
+                    break;
+                case 'home':
+                default:
+                    renderHomePage();
+                    break;
+            }
+        }
+
+
         // --- INITIALIZATION ---
-        document.addEventListener('DOMContentLoaded', () => {
-            lucide.createIcons();
-            // Mulai di halaman 'live-tv'
-            renderPage(); 
-        });
+        window.onload = function() {
+            initFirebaseAndAuth(); 
+        };
     </script>
 </body>
 </html>
